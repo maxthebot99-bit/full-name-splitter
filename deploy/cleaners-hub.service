@@ -1,0 +1,70 @@
+# Systemd unit template for cleaners-hub.
+#
+# /usr/local/bin/app may rewrite this file at deploy time (e.g. to inject
+# the auto-assigned $PORT and the WorkingDirectory). The hardening
+# directives below are the canonical "post-2026-04-27 lockdown" pattern;
+# do not weaken them without updating memory/project_vps_lockdown_complete.md.
+#
+# Before first deploy you must plant both keys via systemd-creds:
+#   sudo systemd-creds encrypt --name=xai-api-key    - /etc/credstore.encrypted/xai-api-key
+#   sudo systemd-creds encrypt --name=resend-api-key - /etc/credstore.encrypted/resend-api-key
+
+[Unit]
+Description=cleaners-hub web app (Companies + First Names cleaner)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/dashboard/apps/cleaners-hub
+Environment=PORT=8181
+Environment=CLEANERS_HUB_ENV=prod
+Environment=CLEANERS_HUB_DATA_DIR=/var/lib/cleaners-hub
+Environment=CLEANERS_HUB_SESSIONS_DIR=/var/tmp/cleaners-hub/sessions
+# Credentials are decrypted into /run/credentials/cleaners-hub.service/<name>
+# at unit start; we expose them to the app via the same env names the Python
+# code already looks at (XAI_API_KEY_FILE, RESEND_API_KEY_FILE).
+LoadCredentialEncrypted=xai-api-key:/etc/credstore.encrypted/xai-api-key
+LoadCredentialEncrypted=resend-api-key:/etc/credstore.encrypted/resend-api-key
+Environment=XAI_API_KEY_FILE=%d/xai-api-key
+Environment=RESEND_API_KEY_FILE=%d/resend-api-key
+
+ExecStart=/var/www/dashboard/apps/cleaners-hub/deploy/start.sh
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cleaners-hub
+
+# ─── Hardening ───────────────────────────────────────────────────────
+# Mirrors kbot's pattern; tightened for an internet-exposed app.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+# strict ProtectSystem makes /var/lib and /var/tmp read-only by default;
+# add the dirs the app actually writes.
+ReadWritePaths=/var/lib/cleaners-hub
+ReadWritePaths=/var/tmp/cleaners-hub
+# Inbox for new uploads
+StateDirectory=cleaners-hub
+RuntimeDirectory=cleaners-hub
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+build/
+dist/
+
+# Virtualenvs
+.venv/
+venv/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env files (we use systemd-creds in prod; never commit a .env)
+.env
+.env.*
+!.env.example
+
+# Tests + tooling
+.pytest_cache/
+.coverage
+.mypy_cache/
+.ruff_cache/
+
+# Frontend build cache (we DO commit ui_dist/, that's intentional)
+ui/node_modules/
+ui/dist/
+ui/.vite/
+ui/coverage/
+ui/tsconfig.tsbuildinfo
+
+# Local session tempdirs + data dir (only relevant outside the VPS)
+.local-tmp/
+.local-data/
+*.log
+
+# Local secrets file used during local dev (NEVER commit)
+xai-api-key.txt
+resend-api-key.txt
