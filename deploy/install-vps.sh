@@ -36,6 +36,7 @@ REPO_URL="https://github.com/maxthebot99-bit/${APP_NAME}.git"
 SOURCE_DIR="/home/kianna/github-repos/${APP_NAME}"
 APP_DIR="/var/www/dashboard/apps/${APP_NAME}"
 STATE_DIR="/var/lib/${APP_NAME}"
+OUTPUTS_DIR="/var/lib/${APP_NAME}/outputs"
 UNIT_PATH="/etc/systemd/system/${APP_NAME}.service"
 CLOUDFLARED_CONFIG="/etc/cloudflared/config.yml"
 
@@ -100,9 +101,11 @@ echo "[install] pip install -e . (~30s if cached, ~2min if fresh) ..."
 "$APP_DIR/.venv/bin/pip" install --quiet --no-input --upgrade pip
 "$APP_DIR/.venv/bin/pip" install --quiet --no-input -e "$APP_DIR"
 
-# ─── persistent state dir ────────────────────────────────────────────────────
+# ─── persistent state + outputs dir ──────────────────────────────────────────
+# State dir holds spend.sqlite3, history.sqlite3, settings.json, alerts.sqlite3
+# Outputs dir holds completed run CSVs (survive systemctl restart)
 
-mkdir -p "$STATE_DIR"
+mkdir -p "$STATE_DIR" "$OUTPUTS_DIR"
 chown -R www-data:www-data "$STATE_DIR"
 
 # ─── ownership + permissions ─────────────────────────────────────────────────

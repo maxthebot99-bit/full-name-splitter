@@ -38,6 +38,20 @@ def _sessions_root() -> Path:
     return Path("/var/tmp/cleaners-hub/sessions")
 
 
+def _outputs_root() -> Path:
+    """Persistent output dir — survives systemctl restart.
+
+    Lives under /var/lib (not PrivateTmp) so a service restart doesn't wipe
+    completed run outputs. The systemd unit's ReadWritePaths covers
+    /var/lib/cleaners-hub which contains this dir + spend.sqlite3 +
+    history.sqlite3.
+    """
+    p = os.environ.get("CLEANERS_HUB_OUTPUTS_DIR")
+    if p:
+        return Path(p)
+    return Path("/var/lib/cleaners-hub/outputs")
+
+
 def is_valid_sid(sid: str) -> bool:
     """Strict UUID validation; rejects anything that's not a canonical UUID
     string. This is the path-traversal gate."""
@@ -77,6 +91,15 @@ class Session:
     result_prompt_tokens: int = 0
     result_completion_tokens: int = 0
 
+    # Manual cell overrides: row index (1-based, matching the n field on Row) →
+    # user-edited cleaned value. Wins over the Grok output at download time.
+    overrides: dict[int, str] = field(default_factory=dict)
+    # In-memory copy of the source DataFrame, kept for cheap rebuilds when
+    # the user toggles overrides or reruns a row.
+    source_df: object | None = None  # pandas.DataFrame; typed loose to avoid import at session-creation time
+    # Final NameContext list, for editable-cell + per-row rerun support.
+    contexts: list = field(default_factory=list)
+
     # SSE event queue (per-session). Bound to the FastAPI loop on creation.
     event_queue: asyncio.Queue[dict[str, Any]] | None = None
     event_loop: asyncio.AbstractEventLoop | None = None
@@ -84,6 +107,11 @@ class Session:
     @property
     def dir(self) -> Path:
         return _sessions_root() / self.sid
+
+    @property
+    def output_path(self) -> Path:
+        """Persistent output file for this run. Survives systemctl restart."""
+        return _outputs_root() / f"{self.sid}.csv"
 
     def touch(self) -> None:
         self.last_active = time.time()
@@ -94,6 +122,7 @@ class SessionStore:
         self._lock = threading.RLock()
         self._sessions: dict[str, Session] = {}
         _sessions_root().mkdir(parents=True, exist_ok=True)
+        _outputs_root().mkdir(parents=True, exist_ok=True)
 
     def create(self, *, kind: str, email: str | None,
                loop: asyncio.AbstractEventLoop) -> Session:

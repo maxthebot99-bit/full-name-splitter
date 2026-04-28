@@ -23,8 +23,15 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 
-# Hard-coded daily cap. To change, edit this constant and redeploy.
-SPEND_CAP_USD_PER_DAY: Decimal = Decimal("10.00")
+# HARD daily-cap ceiling — the absolute maximum the soft cap (in
+# AppSettings.daily_cap_usd) can be raised to via the UI. To raise above
+# this, edit this constant and redeploy. Pinned in code (not env / not
+# settings.json) so a compromised .env or a leaked admin JWT can't push
+# spending past this number.
+#
+# The DEFAULT soft cap is set in settings_store.AppSettings (currently
+# $10/day); admin can dial it anywhere in [MIN_DAILY_CAP_USD, this].
+SPEND_CAP_USD_PER_DAY: Decimal = Decimal("100.00")
 
 # Grok-4 fast (non-reasoning) pricing. Update if xAI changes published rates.
 # These mirror the desktop xai.py constants.

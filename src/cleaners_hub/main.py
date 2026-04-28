@@ -57,6 +57,7 @@ from slowapi.errors import RateLimitExceeded
 from cleaners_hub import __version__
 from cleaners_hub.alerts import alerter
 from cleaners_hub.audit import audit, setup_logging
+from cleaners_hub.history import history
 from cleaners_hub.middleware import CSRFCheckMiddleware
 from cleaners_hub.sessions import (
     Session,
@@ -65,9 +66,21 @@ from cleaners_hub.sessions import (
     store,
     idle_sweeper_loop,
 )
+from cleaners_hub.settings_store import (
+    ALLOWED_MODELS,
+    MAX_BATCH_SIZE,
+    MIN_BATCH_SIZE,
+    MIN_DAILY_CAP_USD,
+    settings as app_settings,
+)
 from cleaners_hub.spend import SPEND_CAP_USD_PER_DAY, SpendTracker
 from cleaners_hub.streaming import sse_event_stream
-from cleaners_hub.workers import spawn_run
+from cleaners_hub.workers import (
+    apply_override,
+    dry_run_sample,
+    rerun_one_row,
+    spawn_run,
+)
 
 # ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -75,6 +88,14 @@ MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
 ALLOWED_EXTENSIONS = {".xlsx", ".csv"}
 ALLOWED_KINDS = {"company", "name"}
 EST_USD_PER_ROW = Decimal("0.00012")  # conservative: ~300 in-tok + 8 out-tok @ Grok pricing
+
+# Emails allowed to PUT /api/settings. Hardcoded in code, not env, to keep
+# admin gating outside the blast radius of a compromised .env file.
+ADMIN_EMAILS: frozenset[str] = frozenset({"jazif@benchmarkintl.com"})
+
+
+def _is_admin(email: str | None) -> bool:
+    return email is not None and email.lower() in {e.lower() for e in ADMIN_EMAILS}
 
 _log = logging.getLogger("cleaners_hub.main")
 _spend = SpendTracker()
@@ -199,6 +220,27 @@ class RunBody(BaseModel):
     rowLimit: int | None = Field(None, ge=1, le=1_000_000)
 
 
+class DryRunSampleBody(BaseModel):
+    column: str = Field(..., min_length=1, max_length=200)
+    count: int = Field(25, ge=1, le=100)
+
+
+class OverrideBody(BaseModel):
+    cleaned: str | None = Field(None, max_length=2000)
+
+
+class RerunRowBody(BaseModel):
+    n: int = Field(..., ge=1, le=1_000_000)
+
+
+class SettingsPatch(BaseModel):
+    daily_cap_usd: float | None = Field(None, ge=0, le=float(SPEND_CAP_USD_PER_DAY))
+    batch_size_company: int | None = Field(None, ge=MIN_BATCH_SIZE, le=MAX_BATCH_SIZE)
+    batch_size_name: int | None = Field(None, ge=MIN_BATCH_SIZE, le=MAX_BATCH_SIZE)
+    model_company: str | None = None
+    model_name: str | None = None
+
+
 # ─── Routes ─────────────────────────────────────────────────────────────────
 
 @app.get("/api/health")
@@ -215,11 +257,17 @@ async def health() -> dict:
 async def whoami(request: Request) -> dict:
     email = _email_from_request(request)
     today = _spend.today_total_usd()
+    soft_cap = Decimal(str(app_settings().get().daily_cap_usd))
+    remaining = soft_cap - today
+    if remaining < 0:
+        remaining = Decimal(0)
     return {
         "email": email,
+        "is_admin": _is_admin(email),
         "today_usd": float(today),
-        "cap_usd": float(SPEND_CAP_USD_PER_DAY),
-        "remaining_usd": float(_spend.remaining_today_usd()),
+        "cap_usd": float(soft_cap),                  # soft cap (settings)
+        "hard_cap_usd": float(SPEND_CAP_USD_PER_DAY),  # immutable ceiling
+        "remaining_usd": float(remaining),
     }
 
 
@@ -349,7 +397,8 @@ async def dry_run(
 
     est = (Decimal(rows) * EST_USD_PER_ROW).quantize(Decimal("0.0001"))
     today = _spend.today_total_usd()
-    will_block = (today + est) > SPEND_CAP_USD_PER_DAY
+    soft_cap = Decimal(str(app_settings().get().daily_cap_usd))
+    will_block = (today + est) > soft_cap
 
     audit("dry_run", email=_email_from_request(request), session_id=sid,
           kind=sess.kind, column=body.column, row_count=rows,
@@ -359,7 +408,7 @@ async def dry_run(
         "row_count": rows,
         "estimated_cost_usd": float(est),
         "today_usd": float(today),
-        "cap_usd": float(SPEND_CAP_USD_PER_DAY),
+        "cap_usd": float(soft_cap),
         "would_exceed_cap": will_block,
     }
 
@@ -438,6 +487,173 @@ async def download(request: Request, sid: str = PathParam(...)):
         filename=download_name,
         headers={"Cache-Control": "no-store"},
     )
+
+
+# ─── v2 routes: dry-run sample, overrides, rerun, history, settings ────────
+
+@app.post("/api/dry-run-sample/{sid}")
+@limiter.limit("10/minute")
+async def dry_run_sample_route(
+    request: Request,
+    body: DryRunSampleBody,
+    sid: str = PathParam(...),
+) -> dict:
+    sess = _require_session(sid)
+    if sess.upload_path is None:
+        raise HTTPException(409, "no file uploaded")
+    # Run synchronously in a thread-pool slot (clean_batch is sync httpx).
+    # Doesn't block the asyncio loop because FastAPI runs def routes via
+    # the threadpool, but this is async, so wrap in run_in_executor for
+    # consistency with our worker model.
+    loop = asyncio.get_running_loop()
+    try:
+        result = await loop.run_in_executor(
+            None,
+            lambda: dry_run_sample(sess, column=body.column, count=body.count, spend=_spend),
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    except Exception as e:
+        _log.warning("dry_run_sample failed: %r", e)
+        raise HTTPException(500, f"{type(e).__name__}: {e}") from e
+
+    audit("dry_run_sample_request", email=_email_from_request(request),
+          session_id=sid, kind=sess.kind, column=body.column, count=body.count)
+    return result
+
+
+@app.post("/api/rows/{sid}/{n}")
+@limiter.limit("60/minute")
+async def override_row(
+    request: Request,
+    body: OverrideBody,
+    sid: str = PathParam(...),
+    n: int = PathParam(..., ge=1, le=1_000_000),
+) -> dict:
+    sess = _require_session(sid)
+    payload = apply_override(sess, n=n, cleaned=body.cleaned)
+    if payload is None:
+        raise HTTPException(404, f"row {n} not found in session")
+    audit("override_request", email=_email_from_request(request),
+          session_id=sid, kind=sess.kind, row_n=n,
+          cleared=(body.cleaned is None))
+    return payload
+
+
+@app.post("/api/rerun-row/{sid}")
+@limiter.limit("30/minute")
+async def rerun_row_route(
+    request: Request,
+    body: RerunRowBody,
+    sid: str = PathParam(...),
+) -> dict:
+    sess = _require_session(sid)
+    loop = asyncio.get_running_loop()
+    try:
+        payload = await loop.run_in_executor(
+            None, lambda: rerun_one_row(sess, n=body.n, spend=_spend)
+        )
+    except Exception as e:
+        _log.warning("rerun_one_row failed: %r", e)
+        raise HTTPException(500, f"{type(e).__name__}: {e}") from e
+    if payload is None:
+        raise HTTPException(404, f"row {body.n} not found in session")
+    audit("rerun_request", email=_email_from_request(request),
+          session_id=sid, kind=sess.kind, row_n=body.n)
+    return payload
+
+
+@app.get("/api/runs")
+@limiter.limit("60/minute")
+async def list_runs(
+    request: Request,
+    kind: str | None = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    mine_only: bool = Query(False),
+) -> dict:
+    if kind is not None and kind not in ALLOWED_KINDS:
+        raise HTTPException(400, f"kind must be one of {sorted(ALLOWED_KINDS)}")
+    email = _email_from_request(request)
+    h = history()
+    rows = h.list_runs(
+        kind=kind,
+        email=email if mine_only else None,
+        limit=limit,
+        offset=offset,
+    )
+    total = h.count_runs(kind=kind, email=email if mine_only else None)
+    return {"total": total, "limit": limit, "offset": offset, "rows": rows}
+
+
+@app.get("/api/runs/{run_id}")
+@limiter.limit("60/minute")
+async def get_run(request: Request, run_id: str = PathParam(...)) -> dict:
+    if not is_valid_sid(run_id):
+        raise HTTPException(400, "invalid run id")
+    row = history().get_run(run_id)
+    if row is None:
+        raise HTTPException(404, "run not found")
+    return row
+
+
+@app.get("/api/runs/{run_id}/download")
+@limiter.limit("30/minute")
+async def download_past_run(request: Request, run_id: str = PathParam(...)):
+    if not is_valid_sid(run_id):
+        raise HTTPException(400, "invalid run id")
+    row = history().get_run(run_id)
+    if row is None:
+        raise HTTPException(404, "run not found")
+    if row.get("state") != "done":
+        raise HTTPException(409, f"run state is {row.get('state')}")
+    out_path_str = row.get("output_path")
+    if not out_path_str:
+        raise HTTPException(410, "no output recorded for this run")
+    out = Path(out_path_str)
+    if not out.exists():
+        raise HTTPException(410, "output file missing on disk")
+    base = Path(row.get("filename") or "cleaned").stem
+    audit("download_history", email=_email_from_request(request),
+          session_id=run_id, kind=row.get("kind"))
+    return FileResponse(
+        out,
+        media_type="text/csv",
+        filename=f"{base}__cleaned.csv",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.get("/api/settings")
+@limiter.limit("60/minute")
+async def get_settings(request: Request) -> dict:
+    s = app_settings().get()
+    return {
+        **s.to_dict(),
+        "is_admin": _is_admin(_email_from_request(request)),
+        "hard_cap_usd": float(SPEND_CAP_USD_PER_DAY),
+        "min_batch_size": MIN_BATCH_SIZE,
+        "max_batch_size": MAX_BATCH_SIZE,
+        "min_daily_cap_usd": MIN_DAILY_CAP_USD,
+        "allowed_models": list(ALLOWED_MODELS),
+    }
+
+
+@app.put("/api/settings")
+@limiter.limit("10/minute")
+async def put_settings(request: Request, body: SettingsPatch) -> dict:
+    email = _email_from_request(request)
+    if not _is_admin(email):
+        raise HTTPException(403, "admin only")
+    patch = {k: v for k, v in body.dict().items() if v is not None}
+    if not patch:
+        raise HTTPException(400, "no fields to update")
+    try:
+        new_settings = app_settings().update(patch)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    audit("settings_changed", email=email, **patch)
+    return new_settings.to_dict()
 
 
 # ─── SPA shell ──────────────────────────────────────────────────────────────
