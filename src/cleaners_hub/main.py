@@ -691,15 +691,33 @@ async def list_runs(
     if kind is not None and kind not in ALLOWED_KINDS:
         raise HTTPException(400, f"kind must be one of {sorted(ALLOWED_KINDS)}")
     email = _email_from_request(request)
+    # Non-admins can only see their own runs — never expose other users'
+    # filenames / row counts / costs. Admins see everything by default;
+    # they can still pass mine_only=true to filter their own.
+    is_admin = _is_admin(email)
+    effective_mine_only = mine_only or not is_admin
+    filter_email = email if effective_mine_only else None
     h = history()
     rows = h.list_runs(
         kind=kind,
-        email=email if mine_only else None,
+        email=filter_email,
         limit=limit,
         offset=offset,
     )
-    total = h.count_runs(kind=kind, email=email if mine_only else None)
+    total = h.count_runs(kind=kind, email=filter_email)
     return {"total": total, "limit": limit, "offset": offset, "rows": rows}
+
+
+def _can_access_run(row: dict, email: str) -> bool:
+    """Owner or admin only. Used to gate /api/runs/{id} and its download.
+
+    We deliberately collapse "you don't own it" and "doesn't exist" into a
+    single 404 in the callers so an unauthorized user can't probe the run
+    space by sending guessed UUIDs.
+    """
+    if _is_admin(email):
+        return True
+    return (row.get("email") or "").lower() == email.lower()
 
 
 @app.get("/api/runs/{run_id}")
@@ -708,7 +726,9 @@ async def get_run(request: Request, run_id: str = PathParam(...)) -> dict:
     if not is_valid_sid(run_id):
         raise HTTPException(400, "invalid run id")
     row = history().get_run(run_id)
-    if row is None:
+    email = _email_from_request(request)
+    if row is None or not _can_access_run(row, email):
+        # Same 404 shape whether the run is missing or just not yours.
         raise HTTPException(404, "run not found")
     return row
 
@@ -719,7 +739,8 @@ async def download_past_run(request: Request, run_id: str = PathParam(...)):
     if not is_valid_sid(run_id):
         raise HTTPException(400, "invalid run id")
     row = history().get_run(run_id)
-    if row is None:
+    email = _email_from_request(request)
+    if row is None or not _can_access_run(row, email):
         raise HTTPException(404, "run not found")
     if row.get("state") != "done":
         raise HTTPException(409, f"run state is {row.get('state')}")
@@ -730,8 +751,8 @@ async def download_past_run(request: Request, run_id: str = PathParam(...)):
     if not out.exists():
         raise HTTPException(410, "output file missing on disk")
     base = Path(row.get("filename") or "cleaned").stem
-    audit("download_history", email=_email_from_request(request),
-          session_id=run_id, kind=row.get("kind"))
+    audit("download_history", email=email, session_id=run_id,
+          kind=row.get("kind"), owner=row.get("email"))
     return FileResponse(
         out,
         media_type="text/csv",

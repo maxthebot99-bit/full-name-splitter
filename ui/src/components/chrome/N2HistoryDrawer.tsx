@@ -11,6 +11,10 @@ export function N2HistoryDrawer() {
   const loading = useStore((s) => s.history.loading);
   const runs = useStore((s) => s.history.runs);
   const total = useStore((s) => s.history.total);
+  const isAdmin = useStore((s) => s.whoami?.is_admin ?? false);
+  // Non-admins are server-side restricted to their own runs regardless of
+  // this toggle, so we just hide the control for them — there's nothing
+  // to toggle. Admins see all runs by default and can scope to their own.
   const [mineOnly, setMineOnly] = useState(false);
 
   if (!open) return null;
@@ -92,33 +96,35 @@ export function N2HistoryDrawer() {
           }}
         >
           <span style={{ fontFamily: fMono, fontSize: 10, color: N2.text3, letterSpacing: 1.4 }}>
-            {total.toLocaleString('en-US')} total
+            {total.toLocaleString('en-US')} {isAdmin ? 'total' : 'of yours'}
           </span>
-          <label
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 8,
-              fontFamily: fMono,
-              fontSize: 10,
-              color: N2.text2,
-              letterSpacing: 1.2,
-              textTransform: 'uppercase',
-              cursor: 'pointer',
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={mineOnly}
-              onChange={(e) => {
-                const v = e.target.checked;
-                setMineOnly(v);
-                void openHistory({ mineOnly: v });
+          {isAdmin && (
+            <label
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                fontFamily: fMono,
+                fontSize: 10,
+                color: N2.text2,
+                letterSpacing: 1.2,
+                textTransform: 'uppercase',
+                cursor: 'pointer',
               }}
-              style={{ accentColor: N2.accent as string }}
-            />
-            mine only
-          </label>
+            >
+              <input
+                type="checkbox"
+                checked={mineOnly}
+                onChange={(e) => {
+                  const v = e.target.checked;
+                  setMineOnly(v);
+                  void openHistory({ mineOnly: v });
+                }}
+                style={{ accentColor: N2.accent as string }}
+              />
+              mine only
+            </label>
+          )}
         </div>
 
         <div style={{ overflow: 'auto' }}>
