@@ -64,6 +64,11 @@ export interface KindSlice {
   mapperSelectedColumn?: string;
   // Active SSE subscription, if any.
   eventStream?: EventSource;
+  // Wall-clock millis (Date.now()) of the last telemetry frame the store
+  // saw. The N2Progress / N2Telemetry / N2Thinking components extrapolate
+  // forward from this point using rowsPerSecond so the UI moves smoothly
+  // between batches instead of sitting still for ~14s and then jumping.
+  lastTelemetryAt?: number;
   // Row numbers currently being rerun via ▶ (or override). Drives the
   // sidebar's clay-style "thinking" strip — when this is non-empty we
   // visually mirror the running state even though runState is still
@@ -193,6 +198,7 @@ export const useStore = create<Store>((set, get) => {
       }
       update(k, {
         telemetry: { ...cur.telemetry, ...t, rowsPerSecondHistory: history },
+        lastTelemetryAt: Date.now(),
       });
     },
     appendRows: (k, rs) => {

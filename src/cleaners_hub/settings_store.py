@@ -39,8 +39,14 @@ MIN_DAILY_CAP_USD = 0.0  # 0 = block all runs (effectively a kill switch)
 @dataclass
 class AppSettings:
     daily_cap_usd: float = 10.0
-    batch_size_company: int = 200
-    batch_size_name: int = 200
+    # batch_size = how many rows we send to Grok in one API call. Smaller
+    # batches → telemetry/SSE updates fire more often → progress bar feels
+    # real-time instead of jumping every 14s. Trade-off: the system prompt
+    # gets re-amortized over fewer rows, so per-row input tokens go up
+    # ~14% (300 prompt tokens / 50 vs / 200). For 12k rows that's ~$0.02
+    # extra. Worth it. Admin can tune up to MAX_BATCH_SIZE in Settings.
+    batch_size_company: int = 50
+    batch_size_name: int = 50
     model_company: str = "grok-4-fast-non-reasoning"
     model_name: str = "grok-4-fast-non-reasoning"
 

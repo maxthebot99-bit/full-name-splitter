@@ -1,6 +1,7 @@
 import { N2, fSerif, fMono } from '../../../theme';
 import { N2Label } from '../../atoms/N2Label';
 import { N2Number } from '../../atoms/N2Number';
+import { useLiveTelemetry } from '../../../hooks';
 import type { AppState } from '../../../types';
 import { useStore } from '../../../store';
 
@@ -19,9 +20,25 @@ export function N2Progress({ view }: { view: AppState }) {
   // percentage reflects what's actually cleaned.
   const total = slice.file?.rows ?? slice.progress.total;
   const cleanedFromRows = slice.rows.filter((r) => r.status !== 'pending').length;
-  const processed = view === 'running'
+  const processedSnapshot = view === 'running'
     ? Math.max(slice.progress.processed, cleanedFromRows)
     : cleanedFromRows;
+
+  // Smooth between telemetry frames. Backend telemetry fires once per
+  // Grok batch — a 14s gap with batch=200, ~3.5s with batch=50. The hook
+  // extrapolates rowsPerSecond × elapsed forward so the bar moves
+  // continuously and snaps to truth when each batch lands.
+  const live = useLiveTelemetry({
+    processed: processedSnapshot,
+    total,
+    rowsPerSecond: slice.telemetry.rowsPerSecond,
+    tokensIn: slice.telemetry.tokensIn,
+    tokensOut: slice.telemetry.tokensOut,
+    costUsd: slice.telemetry.costUsd,
+    lastTelemetryAt: slice.lastTelemetryAt,
+    active: view === 'running',
+  });
+  const processed = Math.min(total, live.processed);
   const pct = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 0;
   return (
     <div style={{ paddingTop: 14, borderTop: `1px solid ${N2.hair}` }}>
@@ -53,7 +70,11 @@ export function N2Progress({ view }: { view: AppState }) {
           value={pct}
           size={44}
           color={view === 'done' ? N2.sage : N2.accent}
-          animate={true}
+          // While running, useLiveTelemetry already drives the value at
+          // 4 Hz — running useCountUp's 1.1s ease on top of that creates
+          // a chase animation that never settles. Animate only on the
+          // final done snapshot.
+          animate={view !== 'running'}
           format={(v) => Math.round(v as number).toString()}
         />
         <span style={{ fontFamily: fSerif, fontSize: 22, color: N2.text3, fontStyle: 'italic' }}>
