@@ -89,9 +89,10 @@ ALLOWED_EXTENSIONS = {".xlsx", ".csv"}
 ALLOWED_KINDS = {"company", "name"}
 EST_USD_PER_ROW = Decimal("0.000011")  # observed: ~$0.0081 / 748 rows on Grok-4-fast (2026-04-27)
 
-# Emails allowed to PUT /api/settings. Hardcoded in code, not env, to keep
-# admin gating outside the blast radius of a compromised .env file.
-ADMIN_EMAILS: frozenset[str] = frozenset({"jazif@benchmarkintl.com"})
+# Emails allowed to PUT /api/settings + see other users' run history.
+# Hardcoded in code, not env, to keep admin gating outside the blast
+# radius of a compromised .env file.
+ADMIN_EMAILS: frozenset[str] = frozenset({"maxthebot99@gmail.com"})
 
 
 def _is_admin(email: str | None) -> bool:
