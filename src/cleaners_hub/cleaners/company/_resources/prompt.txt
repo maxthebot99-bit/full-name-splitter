@@ -10,9 +10,9 @@ Clean the raw company name from {{companyName}} and return only the cleaned comp
 #INSTRUCTIONS#
 Apply the following rules in order to the value from {{companyName}}:
 
-1) **Remove legal entity designators — TRAILING ONLY.** Strip trailing forms like LLC, L.L.C., Inc, Inc., Incorporated, Corp, Corp., Corporation, Co, Co., Company, Ltd, Ltd., Limited, LLP, LLLP, PLC, PC, P.C., LP, d/b/a, DBA, and similar variants. For "Holdings" and "Group": remove only if they appear at the end; if either appears mid-name, keep it.
+1) **Remove legal entity designators — TRAILING ONLY.** Strip trailing forms like LLC, L.L.C., Inc, Inc., Incorporated, Corp, Corp., Corporation, Co, Co., Company, Ltd, Ltd., Limited, LLP, LLLP, PLC, PC, P.C., LP, d/b/a, DBA, GmbH, AG, S.A., S.L., Pty, Pty Ltd, B.V., N.V., and similar variants. These are the ONLY trailing words you remove.
 
-   **Critical:** This applies ONLY to designators at the END of the name. Do NOT interpret single-letter-plus-period patterns elsewhere (e.g., middle initials like "Dora L. International", "John Q. Public Industries") as legal abbreviations. Preserve them — they are part of the name.
+   **Critical:** This applies ONLY to formal legal designators at the END of the name. Descriptive suffixes like "Holdings", "Group", "International", "Services", "Solutions", "Industries", "Systems", "Partners", etc. are PART of the company name — see Rule 5. Do NOT interpret single-letter-plus-period patterns elsewhere (e.g., middle initials like "Dora L. International", "John Q. Public Industries") as legal abbreviations. Preserve them.
 
 2) Strip noise:
    - Remove all text inside parentheses or brackets, including the brackets.
@@ -33,7 +33,7 @@ Apply the following rules in order to the value from {{companyName}}:
 
 4) Convert non-English characters to closest English equivalents (ASCII transliteration). Example: ç→c, é→e, ñ→n, ü→u.
 
-5) Remove trailing generic fillers ONLY when clearly boilerplate. "International," "Services," or "Solutions" can be stripped IF they appear as a generic suffix with no brand meaning. DO NOT strip them if they're core to the brand identity (e.g., "Integrated Defense Solutions", "Doctors Without Borders International", "Dora L. International" — when removing leaves a stub like "Dora L." that no longer reads like a brand, keep "International").
+5) **Do NOT strip descriptive words** like "International", "Services", "Solutions", "Group", "Industries", "Systems", "Holdings", "Partners", "Associates", "Technologies", "Enterprises", or similar suffixes — even when they look generic. They are part of the company's name. Only the explicit legal designators in Rule 1 (LLC, Inc, Corp, Ltd, etc.) get stripped. Everything else stays.
 
 6) Clean spacing: Collapse multiple spaces into one and trim leading/trailing whitespace.
 
@@ -92,6 +92,18 @@ Output (cleanedName): Dora L. International
 
 Input (companyName): "John Q. Public Industries Inc"
 Output (cleanedName): John Q. Public Industries
+
+Input (companyName): "Acme Solutions"
+Output (cleanedName): Acme Solutions
+
+Input (companyName): "Acme Holdings LLC"
+Output (cleanedName): Acme Holdings
+
+Input (companyName): "Pacific Rim Services Group"
+Output (cleanedName): Pacific Rim Services Group
+
+Input (companyName): "Globex International, Inc."
+Output (cleanedName): Globex International
 
 Input (companyName): "GREENLIGHT FINANCIAL LLC"
 Output (cleanedName): Greenlight Financial
