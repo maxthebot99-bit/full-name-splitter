@@ -191,8 +191,13 @@ unset CF_TOKEN CF_ZONE
 
 # ─── start the app + cloudflared ─────────────────────────────────────────────
 
-echo "[install] enabling + starting ${APP_NAME}.service ..."
-systemctl enable --now "${APP_NAME}.service"
+echo "[install] enabling + restarting ${APP_NAME}.service ..."
+# `enable --now` is a no-op when the service is already running — it only
+# starts a stopped unit. We need an explicit restart so the live Python
+# process picks up source changes from this rsync pass. Without this, the
+# binary on disk is the new code but the running process keeps the old.
+systemctl enable "${APP_NAME}.service"
+systemctl restart "${APP_NAME}.service"
 sleep 3
 
 if [[ $NEED_CF_RESTART -eq 1 ]]; then
