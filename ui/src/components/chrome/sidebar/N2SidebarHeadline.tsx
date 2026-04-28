@@ -64,6 +64,13 @@ function contentFor(
           All {fmtInt(total)} {noun(kind)}, <em style={{ color: N2.sage }}>reconciled</em>.
         </>
       );
+    case 'cancelled':
+      return (
+        <>
+          {fmtInt(partialCleaned)} of {fmtInt(total)} cleaned,{' '}
+          <em style={{ color: N2.ochre }}>paused</em>.
+        </>
+      );
     case 'error':
       return (
         <>

@@ -19,6 +19,7 @@ export type AppState =
   | 'indexed'           // column picked, ready to run
   | 'running'
   | 'done'
+  | 'cancelled'         // user pressed Cancel — table stays, "Continue" resumes
   | 'error';
 
 export type RowStatus = 'changed' | 'unchanged' | 'null' | 'pending';

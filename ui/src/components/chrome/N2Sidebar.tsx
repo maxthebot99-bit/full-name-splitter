@@ -71,10 +71,10 @@ export function N2Sidebar({ view }: { view: AppState }) {
         />
       )}
 
-      {view === 'indexed' && (
+      {(view === 'indexed' || view === 'cancelled') && (
         <>
           <N2CtaPrimary
-            label={ctaLabel}
+            label={view === 'cancelled' ? 'Continue cleaning' : ctaLabel}
             sub={estSub}
             onClick={() =>
               beginCleaningWithCostCheck(
@@ -83,13 +83,13 @@ export function N2Sidebar({ view }: { view: AppState }) {
               )
             }
           />
-          <N2TryDryRunCta
-            onClick={() => runDryRun(file?.column ?? '', 25)}
-          />
+          {view === 'indexed' && (
+            <N2TryDryRunCta onClick={() => runDryRun(file?.column ?? '', 25)} />
+          )}
         </>
       )}
 
-      {view === 'indexed' && file && (
+      {(view === 'indexed' || view === 'cancelled') && file && (
         <RowLimitInput value={rowLimit} onChange={setRowLimit} max={file.rows} />
       )}
 
@@ -128,10 +128,10 @@ export function N2Sidebar({ view }: { view: AppState }) {
         </button>
       )}
 
-      {(view === 'running' || view === 'done' || inFlight || isPartial) && (
+      {(view === 'running' || view === 'done' || view === 'cancelled' || inFlight || isPartial) && (
         <N2Progress view={view} />
       )}
-      {(view === 'running' || view === 'done' || inFlight || isPartial) && (
+      {(view === 'running' || view === 'done' || view === 'cancelled' || inFlight || isPartial) && (
         <N2Telemetry view={view} />
       )}
     </aside>

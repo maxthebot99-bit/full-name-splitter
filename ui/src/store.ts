@@ -140,11 +140,11 @@ function freshSlice(kind: Kind): KindSlice {
 export function viewState(slice: KindSlice): AppState {
   if (slice.runState === 'running') return 'running';
   if (slice.runState === 'done') return 'done';
-  if (
-    slice.runState === 'error' ||
-    slice.runState === 'spend_blocked' ||
-    slice.runState === 'cancelled'
-  ) {
+  // Cancellation is NOT an error — the user did it on purpose. Keep the
+  // table visible with whatever rows were cleaned, and let them resume
+  // via "Continue cleaning" (the worker skips already-done rows).
+  if (slice.runState === 'cancelled') return 'cancelled';
+  if (slice.runState === 'error' || slice.runState === 'spend_blocked') {
     return 'error';
   }
   if (!slice.sid || !slice.file) return 'empty';

@@ -257,6 +257,9 @@ export function N2Workspace({ view }: { view: AppState }) {
         ) : view === 'error' ? (
           <div style={{ height: '100%', overflow: 'auto' }}><N2ErrorView /></div>
         ) : (
+          // running / done / cancelled / indexed → table.
+          // 'cancelled' especially: the user pressed Cancel; their cleaned
+          // rows are right there, the sidebar offers Continue cleaning.
           <div style={{ height: '100%', overflow: 'auto' }}><N2Table view={view} /></div>
         )}
       </div>

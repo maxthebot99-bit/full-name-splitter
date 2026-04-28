@@ -15,7 +15,12 @@ export function N2ErrorView() {
   const error = slice.error;
   const spendBlocked = slice.spendBlocked;
   const lastRows = slice.rows.slice(-3);
-  const last = error?.lastRow ?? 0;
+  // Don't fall back to "HTTP 429 · rate_limited" with a stale row 0 when
+  // slice.error is genuinely missing — that misleads (a previous bug
+  // surfaced this on cancellation). Prefer counting the rows that DID
+  // make it through before the run hit error state.
+  const cleanedFromRows = slice.rows.filter((r) => r.status !== 'pending').length;
+  const last = error?.lastRow ?? cleanedFromRows;
   const cleaned = Math.max(0, last - 1);
   const retry = error?.retryAfter ?? 0;
 
@@ -81,15 +86,24 @@ export function N2ErrorView() {
                 cap_usd=
                 <span style={{ color: N2.accent }}>${spendBlocked.capUsd.toFixed(2)}</span>
               </>
-            ) : (
+            ) : error ? (
               <>
-                HTTP {error?.code ?? 429} · {error?.message ?? 'rate_limited'}
+                HTTP {error.code} · {error.message}
                 <br />
                 retry_after=<span style={{ color: N2.accent }}>{retry}s</span>
                 <br />
                 partial results preserved ·{' '}
                 <span style={{ color: N2.sage }}>
                   {cleaned.toLocaleString('en-US')} rows cleaned
+                </span>
+              </>
+            ) : (
+              <>
+                An unexpected error occurred.
+                <br />
+                partial results preserved ·{' '}
+                <span style={{ color: N2.sage }}>
+                  {cleanedFromRows.toLocaleString('en-US')} rows cleaned
                 </span>
               </>
             )}

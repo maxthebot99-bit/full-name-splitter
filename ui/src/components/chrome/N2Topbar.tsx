@@ -9,7 +9,8 @@ const LABELS: Record<AppState, { txt: string; color: string }> = {
   indexed: { txt: 'indexed', color: N2.accent },
   running: { txt: 'in motion', color: N2.accent },
   done: { txt: 'reconciled', color: N2.sage },
-  error: { txt: 'paused', color: N2.rose },
+  cancelled: { txt: 'paused', color: N2.ochre },
+  error: { txt: 'error', color: N2.rose },
 };
 
 interface Props {
