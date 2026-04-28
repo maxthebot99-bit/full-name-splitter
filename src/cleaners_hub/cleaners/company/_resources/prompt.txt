@@ -23,8 +23,15 @@ Apply the following rules in order to the value from {{companyName}}:
 
    **Critical:** This applies ONLY to formal legal designators at the END of the name. Descriptive suffixes like "Holdings", "Group", "International", "Services", "Solutions", "Industries", "Systems", "Partners", etc. are PART of the company name — see Rule 5. Do NOT interpret single-letter-plus-period patterns elsewhere (e.g., middle initials like "Dora L. International", "John Q. Public Industries") as legal abbreviations. Preserve them.
 
-   **CRITICAL CARVE-OUT — "& Co" / "& Sons" / "& Brothers" / "& Daughters" patterns are part of the brand, NOT legal designators.** When `Co`, `Co.`, `Sons`, `Brothers`, `Daughters` appears immediately after an ampersand (`&`), it's the brand's own name, like an old-school family-firm signature. PRESERVE these patterns exactly. The trailing-strip list does NOT apply to the `Co`/`Co.` here even though those tokens are normally legal designators. Examples:
-   - "Davis & Co." → "Davis & Co." (Co. is part of the brand)
+   **CRITICAL CARVE-OUT — "& Co" / "& Sons" / "& Brothers" / "& Daughters" patterns are part of the brand, NOT legal designators.** This carve-out ONLY applies when the INPUT LITERALLY CONTAINS an ampersand (`&`) immediately before `Co`, `Co.`, `Sons`, `Brothers`, or `Daughters`. In that exact case, the `& Co.` (etc.) is part of the brand — preserve it.
+
+   **HARD RULES — DO NOT VIOLATE:**
+   - **NEVER add an `&` that wasn't in the input.** "ARC Co." has NO ampersand, so the carve-out does NOT apply — strip `Co.` per Rule 1. Output: "ARC". Do NOT output "ARC & Co.". Hallucinating an ampersand is a strict failure.
+   - **The carve-out fires ONLY on the literal pattern `& Co`, `& Co.`, `& Sons`, `& Brothers`, `& Daughters` (with the ampersand actually present in the input).** If there is no `&` in the input, this rule does NOT apply and Rule 1's normal trailing-strip behavior controls — `Co`, `Co.`, `Company` are stripped.
+   - **Plain trailing `Co` / `Co.` / `Company` (no `&`) is ALWAYS stripped.** "Willowbrook Co" → "Willowbrook". "Birchwood Co" → "Birchwood". "Umbrella Co." → "Umbrella". "Pioneer Co." → "Pioneer". "ARC Co." → "ARC". "Harvest Co" → "Harvest". No exceptions.
+
+   Examples WITH the carve-out applying (literal `&` present):
+   - "Davis & Co." → "Davis & Co." (Co. kept because it follows `&`)
    - "Davis & Co. LLP" → "Davis & Co." (LLP stripped, but Co. kept because it follows `&`)
    - "Procter & Gamble Co." → "Procter & Gamble Co."
    - "J.P. Morgan & Co." → "J.P. Morgan & Co."
@@ -33,7 +40,14 @@ Apply the following rules in order to the value from {{companyName}}:
    - "Johnson & Brothers" → "Johnson & Brothers"
    - "Bates & Sons LLP" → "Bates & Sons" (LLP stripped, & Sons kept)
 
-   Without this carve-out, Grok strips `Co.` as a legal designator and breaks the brand. Apply it whenever there's an ampersand followed by one of those tokens.
+   Examples where the carve-out does NOT apply (no `&` in input — strip per Rule 1):
+   - "ARC Co." → "ARC" (no `&`, so Co. is just a legal designator)
+   - "Willowbrook Co" → "Willowbrook"
+   - "Birchwood Co" → "Birchwood"
+   - "Umbrella Co." → "Umbrella"
+   - "Pioneer Co." → "Pioneer"
+   - "Harvest Co" → "Harvest"
+   - "FEMA Company" → "FEMA"
 
 2) Strip noise:
    - **DBA splitting (KEEP THE BRAND, NOT THE LEGAL NAME):** If the input contains "dba", "DBA", or "d/b/a" (any case) as a separator surrounded by whitespace, this means `<Legal Name> dba <Brand Name>`. KEEP ONLY the part AFTER the dba marker — that's the brand the company actually uses. Then apply the other rules to that brand portion. Example: "Hammer LLC dba Stark Industries" → "Stark Industries"; "Acme Holdings dba Acme" → "Acme".
@@ -80,7 +94,9 @@ Apply the following rules in order to the value from {{companyName}}:
 
    Verify the final output contains ZERO non-ASCII letters before returning. This applies BEFORE the output character-set check in Rule 7.
 
-5) **Do NOT strip descriptive words** like "International", "Services", "Solutions", "Group", "Industries", "Systems", "Holdings", "Partners", "Associates", "Technologies", "Enterprises", or similar suffixes — even when they look generic. They are part of the company's name. Only the explicit legal designators in Rule 1 (LLC, Inc, Corp, Ltd, etc.) get stripped. Everything else stays.
+5) **Do NOT strip descriptive words.** These are PART of the company's name and stay regardless of how generic they look. Non-exhaustive list: "International", "Services", "Solutions", "Group", "Industries", "Systems", "Holdings", "Partners", "Associates", "Technologies", "Enterprises", "Worldwide", "Global", "Network", "USA", "America", "Logistics", "Capital", "Ventures", "Studios", "Manufacturing", "Construction", "Pharmaceuticals", "Energy", "Medical", "Financial", "Consulting", "Research", "Labs". Only the explicit legal designators in Rule 1 (LLC, Inc, Corp, Ltd, etc.) get stripped. Everything else stays.
+
+   **Geographic descriptors specifically stay.** "Northwind Traders USA" → "Northwind Traders USA" (USA is part of the name). "Meta USA" → "Meta USA". "Johnson & Johnson America" → "Johnson & Johnson America". "Acme Worldwide" → "Acme Worldwide". "Globex Global" → "Globex Global". Do NOT trim region names off the end — they're part of how the company refers to itself.
 
 6) Clean spacing: Collapse multiple spaces into one and trim leading/trailing whitespace.
 
@@ -253,6 +269,36 @@ Output (cleanedName): Smith & Sons
 
 Input (companyName): "Bates & Sons"
 Output (cleanedName): Bates & Sons
+
+Input (companyName): "ARC Co."
+Output (cleanedName): ARC
+
+Input (companyName): "Willowbrook Co"
+Output (cleanedName): Willowbrook
+
+Input (companyName): "Birchwood Co"
+Output (cleanedName): Birchwood
+
+Input (companyName): "Umbrella Co."
+Output (cleanedName): Umbrella
+
+Input (companyName): "Pioneer Co."
+Output (cleanedName): Pioneer
+
+Input (companyName): "Harvest Co"
+Output (cleanedName): Harvest
+
+Input (companyName): "Northwind Traders USA"
+Output (cleanedName): Northwind Traders USA
+
+Input (companyName): "Meta USA"
+Output (cleanedName): Meta USA
+
+Input (companyName): "Johnson & Johnson America"
+Output (cleanedName): Johnson & Johnson America
+
+Input (companyName): "Acme Worldwide"
+Output (cleanedName): Acme Worldwide
 
 Input (companyName): "GREENLIGHT FINANCIAL LLC"
 Output (cleanedName): Greenlight Financial
