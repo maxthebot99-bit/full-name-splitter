@@ -9,6 +9,7 @@ import {
   runDryRun,
   startRun,
 } from '../../lib/actions';
+import { estimateRunCost } from '../../api';
 import { N2SidebarHeadline } from './sidebar/N2SidebarHeadline';
 import { N2FileCard } from './sidebar/N2FileCard';
 import { N2EmptyDrop } from './sidebar/N2EmptyDrop';
@@ -16,7 +17,12 @@ import { N2CtaPrimary } from './sidebar/N2CtaPrimary';
 import { N2Progress } from './sidebar/N2Progress';
 import { N2Telemetry } from './sidebar/N2Telemetry';
 
+// Sub-cent costs round to "$0.00" with toFixed(2), which under-reads
+// reality on small files. Shift to 4-decimal display below $0.01 so a
+// 749-row estimate renders as "$0.0082" instead of a misleading "$0.01".
 function fmtCost(n: number) {
+  if (n <= 0) return '$0.00';
+  if (n < 0.01) return `$${n.toFixed(4)}`;
   return `$${n.toFixed(2)}`;
 }
 function fmtHm(s: number) {
@@ -46,7 +52,7 @@ export function N2Sidebar({ view }: { view: AppState }) {
     ? Math.min(rowLimit, pendingCount)
     : pendingCount;
   const estSub = file
-    ? `${effectiveRows.toLocaleString('en-US')} rows · ~${fmtCost(effectiveRows * 0.00012)} · ~${fmtHm(Math.max(60, effectiveRows / 14))}`
+    ? `${effectiveRows.toLocaleString('en-US')} rows · ~${fmtCost(estimateRunCost(effectiveRows))} · ~${fmtHm(Math.max(60, effectiveRows / 14))}`
     : 'load a csv to begin';
   const ctaLabel = isPartial ? 'Continue cleaning' : 'Begin cleaning';
 
@@ -176,7 +182,9 @@ function N2TryDryRunCta({ onClick }: { onClick: () => void }) {
       }}
     >
       <span>↯ Try on first 25</span>
-      <span style={{ color: N2.text3, fontSize: 9.5, letterSpacing: 1.2 }}>~$0.003</span>
+      <span style={{ color: N2.text3, fontSize: 9.5, letterSpacing: 1.2 }}>
+        ~{fmtCost(estimateRunCost(25))}
+      </span>
     </button>
   );
 }

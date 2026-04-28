@@ -35,10 +35,15 @@ async function jsonOrThrow(res: Response): Promise<unknown> {
   throw err;
 }
 
-// ─── Cost estimator (mirrors backend EST_USD_PER_ROW = 0.00012) ─────────
+// ─── Cost estimator (mirrors backend EST_USD_PER_ROW = 0.000011) ────────
+// Observed: ~$0.0081 / 748 rows on Grok-4-fast. Keep this in sync with
+// EST_USD_PER_ROW in main.py — the dry-run endpoint uses the backend value
+// for spend-cap checks; this client-side number drives the sidebar
+// estimate and the cost-ceiling modal trigger.
 const COST_CEILING_USD = 5.0;
+export const COST_USD_PER_ROW = 0.000011;
 export function estimateRunCost(rows: number): number {
-  return rows * 0.00012;
+  return rows * COST_USD_PER_ROW;
 }
 export function estimateRunSeconds(rows: number): number {
   return Math.max(60, rows / 14);

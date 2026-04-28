@@ -87,7 +87,7 @@ from cleaners_hub.workers import (
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
 ALLOWED_EXTENSIONS = {".xlsx", ".csv"}
 ALLOWED_KINDS = {"company", "name"}
-EST_USD_PER_ROW = Decimal("0.00012")  # conservative: ~300 in-tok + 8 out-tok @ Grok pricing
+EST_USD_PER_ROW = Decimal("0.000011")  # observed: ~$0.0081 / 748 rows on Grok-4-fast (2026-04-27)
 
 # Emails allowed to PUT /api/settings. Hardcoded in code, not env, to keep
 # admin gating outside the blast radius of a compromised .env file.
