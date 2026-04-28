@@ -185,14 +185,46 @@ class AlertSender:
             ),
         )
 
+    def run_completed(
+        self,
+        *,
+        email: str,
+        session_id: str,
+        kind: str,
+        filename: str | None,
+        row_count: int,
+        cost_usd: Decimal,
+        elapsed_s: float,
+    ) -> None:
+        """Fire on every successful run done. No dedup — one email per run.
+        ``costly_run`` is still a separate alert that fires only above
+        COSTLY_RUN_THRESHOLD_USD so unusually expensive runs stay
+        distinguishable in the inbox."""
+        rate = (cost_usd / row_count) if row_count else Decimal(0)
+        self._send(
+            subject=(
+                f"[cleaners-hub] {kind} run done — {row_count:,} rows, "
+                f"${cost_usd:.4f}"
+            ),
+            body=(
+                f"Triggered by: {email}\n"
+                f"Kind: {kind}\n"
+                f"File: {filename or '<unknown>'}\n"
+                f"Rows cleaned: {row_count:,}\n"
+                f"Cost: ${cost_usd:.4f} (~${rate:.6f}/row)\n"
+                f"Elapsed: {elapsed_s:.1f}s\n"
+                f"Session: {session_id}\n"
+            ),
+        )
+
     def costly_run(self, *, email: str | None, session_id: str, cost_usd: Decimal,
                    row_count: int, kind: str) -> None:
         if cost_usd <= COSTLY_RUN_THRESHOLD_USD:
             return
         self._send(
-            subject=f"[cleaners-hub] run cost ${cost_usd:.2f} ({kind}, {row_count} rows)",
+            subject=f"[cleaners-hub] HIGH-COST run ${cost_usd:.2f} ({kind}, {row_count} rows)",
             body=(
-                f"Run completed with cost ${cost_usd:.2f}\n"
+                f"Run completed with cost ${cost_usd:.2f} (above ${COSTLY_RUN_THRESHOLD_USD} threshold)\n"
                 f"Email: {email or '<unknown>'}\n"
                 f"Session: {session_id}\n"
                 f"Kind: {kind}\n"

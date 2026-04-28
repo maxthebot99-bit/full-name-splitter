@@ -485,7 +485,23 @@ def run_worker(
             session.result_prompt_tokens = int(final_stats.prompt_tokens)
             session.result_completion_tokens = int(final_stats.completion_tokens)
 
-        # Costly-run alert (>$1 per the spec)
+        elapsed = time.monotonic() - start
+
+        # Always-on completion alert — one email per successful run.
+        try:
+            alerter().run_completed(
+                email=email,
+                session_id=sid,
+                kind=kind,
+                filename=session.upload_filename,
+                row_count=session.result_row_count,
+                cost_usd=Decimal(str(session.result_cost_usd)),
+                elapsed_s=elapsed,
+            )
+        except Exception as e:
+            _log.warning("alert run_completed failed: %r", e)
+
+        # Separate higher-priority alert for unusually expensive runs.
         try:
             alerter().costly_run(
                 email=email,
@@ -497,7 +513,6 @@ def run_worker(
         except Exception as e:
             _log.warning("alert costly_run failed: %r", e)
 
-        elapsed = time.monotonic() - start
         if final_stats is not None:
             pusher.push("telemetry", _stats_to_telemetry(final_stats, elapsed))
         session.state = "done"
