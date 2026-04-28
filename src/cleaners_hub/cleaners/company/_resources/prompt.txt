@@ -21,6 +21,8 @@ Apply the following rules in order to the value from {{companyName}}:
 
 1) **Remove legal entity designators — TRAILING ONLY.** Strip these trailing forms (and only these): LLC, L.L.C., Inc, Inc., Incorporated, Corp, Corp., Corporation, **Co, Co., Company**, Ltd, Ltd., Limited, LLP, LLLP, PLC, PC, P.C., LP, GmbH, AG, S.A., S.L., Pty, Pty Ltd, B.V., N.V., and direct variants. **"Company" is a legal designator — strip it.** "FEMA Company" → "FEMA"; "Momentum Company" → "Momentum"; "Workday Group Company" → "Workday Group" (Group stays per Rule 5; Company goes). DBA is NOT trailing — see Rule 2.
 
+   **Strip the WHOLE designator, not just its trailing period.** "Tyrell Corp." → "Tyrell" (strip both `Corp` and the period — do NOT output "Tyrell Corp"). "Acme Inc." → "Acme" (not "Acme Inc"). "Globex Ltd." → "Globex" (not "Globex Ltd"). The designator is the WORD plus any trailing period, treated as one unit. If you remove the period, you must remove the word too.
+
    **Critical:** This applies ONLY to formal legal designators at the END of the name. Descriptive suffixes like "Holdings", "Group", "International", "Services", "Solutions", "Industries", "Systems", "Partners", etc. are PART of the company name — see Rule 5. Do NOT interpret single-letter-plus-period patterns elsewhere (e.g., middle initials like "Dora L. International", "John Q. Public Industries") as legal abbreviations. Preserve them.
 
    **CRITICAL CARVE-OUT — "& Co" / "& Sons" / "& Brothers" / "& Daughters" patterns are part of the brand, NOT legal designators.** This carve-out ONLY applies when the INPUT LITERALLY CONTAINS an ampersand (`&`) immediately before `Co`, `Co.`, `Sons`, `Brothers`, or `Daughters`. In that exact case, the `& Co.` (etc.) is part of the brand — preserve it.
@@ -30,7 +32,9 @@ Apply the following rules in order to the value from {{companyName}}:
      - "ARC Co." has NO ampersand → output "ARC", NOT "ARC & Co.". Hallucinating an `&` is a strict failure.
      - "JP Morgan LP" has NO periods → output "JP Morgan", NOT "J.P. Morgan". Hallucinating periods between letters is a strict failure, even if the canonical brand uses them.
      - "Coca Cola" has NO hyphen → output "Coca Cola", NOT "Coca-Cola". Hallucinating a hyphen is a strict failure.
-     - You may REMOVE characters per the rules. You may CHANGE letter case per Rule 3. You may NOT INSERT new punctuation or symbols.
+     - "Dunkin'" has NO trailing `s` → output "Dunkin'", NOT "Dunkin's". A trailing apostrophe is part of the brand (Dunkin', McDonald's-style stylization), NOT an incomplete possessive that needs an `s`. Do NOT complete it.
+     - "Mike's" already has the apostrophe-s → output "Mike's", do not add or remove letters.
+     - You may REMOVE characters per the rules. You may CHANGE letter case per Rule 3. You may NOT INSERT new letters, punctuation, or symbols.
    - **The carve-out fires ONLY on the literal pattern `& Co`, `& Co.`, `& Sons`, `& Brothers`, `& Daughters` (with the ampersand actually present in the input).** If there is no `&` in the input, this rule does NOT apply and Rule 1's normal trailing-strip behavior controls — `Co`, `Co.`, `Company` are stripped.
    - **Plain trailing `Co` / `Co.` / `Company` (no `&`) is ALWAYS stripped.** "Willowbrook Co" → "Willowbrook". "Birchwood Co" → "Birchwood". "Umbrella Co." → "Umbrella". "Pioneer Co." → "Pioneer". "ARC Co." → "ARC". "Harvest Co" → "Harvest". No exceptions.
 
@@ -103,6 +107,17 @@ Apply the following rules in order to the value from {{companyName}}:
    Verify the final output contains ZERO non-ASCII letters before returning. This applies BEFORE the output character-set check in Rule 7.
 
 5) **Do NOT strip descriptive words.** These are PART of the company's name and stay regardless of how generic they look. Non-exhaustive list: "International", "Services", "Solutions", "Group", "Industries", "Systems", "Holdings", "Partners", "Associates", "Technologies", "Enterprises", "Worldwide", "Global", "Network", "USA", "America", "Logistics", "Capital", "Ventures", "Studios", "Manufacturing", "Construction", "Pharmaceuticals", "Energy", "Medical", "Financial", "Consulting", "Research", "Labs". Only the explicit legal designators in Rule 1 (LLC, Inc, Corp, Ltd, etc.) get stripped. Everything else stays.
+
+   **This rule applies REGARDLESS of the brand portion's casing or shape.** ALL CAPS brand + descriptor: KEEP the descriptor. Examples that MUST preserve the descriptor every time:
+   - "COMANCO Associates" → "COMANCO Associates" (Associates stays)
+   - "HELLER America" → "HELLER America" (America stays)
+   - "PROSEED Holdings" → "PROSEED Holdings"
+   - "ARC Industries" → "ARC Industries"
+   - "IBM Services" → "IBM Services"
+   - "TSF Global" → "TSF Global"
+   - "NASA Research" → "NASA Research"
+
+   Do NOT strip a descriptor just because the brand prefix is ALL CAPS or short. The descriptor is part of the company's full name.
 
    **Geographic descriptors specifically stay.** "Northwind Traders USA" → "Northwind Traders USA" (USA is part of the name). "Meta USA" → "Meta USA". "Johnson & Johnson America" → "Johnson & Johnson America". "Acme Worldwide" → "Acme Worldwide". "Globex Global" → "Globex Global". Do NOT trim region names off the end — they're part of how the company refers to itself.
 
@@ -370,6 +385,36 @@ Output (cleanedName): Black & Decker
 
 Input (companyName): "BATES & SONS"
 Output (cleanedName): Bates & Sons
+
+Input (companyName): "Tyrell Corp."
+Output (cleanedName): Tyrell
+
+Input (companyName): "Tyrell Corp"
+Output (cleanedName): Tyrell
+
+Input (companyName): "Acme Inc."
+Output (cleanedName): Acme
+
+Input (companyName): "Globex Ltd."
+Output (cleanedName): Globex
+
+Input (companyName): "Dunkin' S.L."
+Output (cleanedName): Dunkin'
+
+Input (companyName): "Dunkin'"
+Output (cleanedName): Dunkin'
+
+Input (companyName): "McDonald's Inc."
+Output (cleanedName): McDonald's
+
+Input (companyName): "COMANCO Associates"
+Output (cleanedName): COMANCO Associates
+
+Input (companyName): "HELLER America"
+Output (cleanedName): HELLER America
+
+Input (companyName): "PROSEED Holdings"
+Output (cleanedName): PROSEED Holdings
 
 Input (companyName): "GREENLIGHT FINANCIAL LLC"
 Output (cleanedName): Greenlight Financial
