@@ -65,20 +65,24 @@ Apply the following rules in order to the value from {{companyName}}:
 
    **(a) KNOWN BRAND STYLIZATION OVERRIDES EVERYTHING.** If the input (in any casing) is a recognizable brand with a canonical stylization, output that stylization. This rule fires BEFORE the preserve-acronym rule. Examples: `MICROSOFT`/`microsoft` → `Microsoft`; `SERVICENOW` → `ServiceNow`; `BURGER KING` → `Burger King`; `MCDONALD'S` → `McDonald's`; `META` → `Meta`; `IHEART` → `iHeart`; `IPIPELINE` → `iPipeline`; `EBAY` → `eBay`; `LEXCORP` → `LexCorp`; `MARQETA` → `Marqeta`; `HUBSPOT` → `HubSpot`; `SALESFORCE` → `Salesforce`; `PLAID` → `Plaid`; `STRIPE` → `Stripe`; `SQUARE` → `Square`; `AFFIRM` → `Affirm`; `STARBUCKS` → `Starbucks`; `GOOGLE` → `Google`; `AMAZON` → `Amazon`; `APPLE` → `Apple`; `TESLA` → `Tesla`. When uncertain whether something is a known brand, prefer applying canonical case if the input is a single word ≥6 letters or a multi-word phrase.
 
-   **(b) Short acronyms / made-up brand words (2-5 letters, single word):** Output ALL CAPS. If the input is already ALL CAPS, preserve it (TSF → TSF, GCA → GCA, ARC → ARC, IBM → IBM, NASA → NASA, ABC → ABC, BBQ → BBQ, AAA → AAA, MIT → MIT, UCLA → UCLA, USPS → USPS, FEMA → FEMA, DOJ → DOJ, STONS → STONS, JUICE → JUICE, FORGE → FORGE). If the input is lowercase or mixed case, NORMALIZE to ALL CAPS: "arc" → "ARC", "ibm" → "IBM", "nasa" → "NASA", "tsf" → "TSF". Do NOT proper-case 2-5 letter inputs to "Arc" or "Ibm" — they read as acronyms and the user wants them ALL CAPS. Even if the string looks like a common word ("JUICE", "ARC"), treat it as a brand acronym at this length.
+   **(b) Short acronyms / made-up brand words (2-5 letters, ALL CAPS, single word): PRESERVE as-is.** If the input is already ALL CAPS at this length, leave it ALL CAPS. Examples passing through unchanged: TSF, GCA, ESE, ARC, IBM, NASA, ABC, BBQ, AAA, MIT, UCLA, USPS, FEMA, DOJ, STONS, JUICE, FORGE. Even if the string looks like a common word ("JUICE", "ARC"), treat it as a brand acronym at this length and keep the ALL CAPS form.
 
-   **(c) ALL CAPS word, 6+ letters: judge by whether it's a common dictionary word.**
-     - If it's a clearly recognizable common English dictionary word OR a generic-sounding name that doesn't have a known stylized casing: apply proper case. Examples that MUST proper-case every time: SUMMIT → Summit; COMPASS → Compass; LIBERTY → Liberty; CATALYST → Catalyst; MOMENTUM → Momentum; HARVEST → Harvest; VELOCITY → Velocity; ZENITH → Zenith; CLEARWATER → Clearwater; BLUEPEAK → Bluepeak; FIELDSTONE → Fieldstone; SILVERSTONE → Silverstone; TRAJECTORY → Trajectory; INDEPENDENCE → Independence; OAKRIDGE → Oakridge; REDWOOD → Redwood; GREENFIELD → Greenfield; GOLDENROD → Goldenrod; GLOBEX → Globex; INNOVATE → Innovate; HARVEST → Harvest; FRONTIER → Frontier; PINECREST → Pinecrest; WILLOWBROOK → Willowbrook.
-     - If it's a brand-specific made-up word that ISN'T a common English dictionary word and ISN'T a recognizable surname: PRESERVE the all-caps form. Examples to preserve: COMANCO, HELLER, PROSEED, STONS.
-     - Tiebreaker when truly uncertain: lean proper-case. The user can manually re-uppercase a wrongly-cased brand more easily than they can recover a wrongly-preserved shouted word.
+   **(b-i) Lowercase 2-5 letter inputs that are common acronyms — UPPERCASE them.** When the input is lowercase and matches a well-known acronym pattern: "arc" → "ARC", "ibm" → "IBM", "nasa" → "NASA", "tsf" → "TSF", "ucla" → "UCLA", "fema" → "FEMA". This is narrow — only lowercase strings that read as acronyms. Mixed-case proper-noun inputs at this length ("Apex", "Forge") fall through to (g) below and stay as typed.
+
+   **(c) ALL CAPS word, 6+ letters: ALMOST ALWAYS PROPER-CASE. (b)/(b-i) DO NOT APPLY at this length.**
+     - 6+ letter ALL CAPS inputs are NOT short acronyms and the (b) preservation rule does NOT cover them. Even if the input is a single ALL CAPS word, at 6+ letters you must apply proper case unless the word is on the "preserve" exception list below.
+     - **Default: proper-case.** Examples that MUST proper-case every time: SUMMIT → Summit; COMPASS → Compass; LIBERTY → Liberty; CATALYST → Catalyst; MOMENTUM → Momentum; HARVEST → Harvest; VELOCITY → Velocity; ZENITH → Zenith; CLEARWATER → Clearwater; BLUEPEAK → Bluepeak; FIELDSTONE → Fieldstone; SILVERSTONE → Silverstone; TRAJECTORY → Trajectory; INDEPENDENCE → Independence; OAKRIDGE → Oakridge; REDWOOD → Redwood; GREENFIELD → Greenfield; GOLDENROD → Goldenrod; GLOBEX → Globex; INNOVATE → Innovate; FRONTIER → Frontier; PINECREST → Pinecrest; WILLOWBROOK → Willowbrook; BEACON → Beacon; PIONEER → Pioneer; PINNACLE → Pinnacle.
+     - **Narrow preserve list (only these — do NOT generalize):** COMANCO → COMANCO; HELLER → HELLER; PROSEED → PROSEED. These are the ONLY 6+ letter ALL CAPS inputs you should leave as-is. Anything else at 6+ letters, proper-case.
+     - **Known brands at 6+ letters hit Rule 3(a), not (c).** AFFIRM → Affirm (canonical brand stylization, not preservation). MICROSOFT → Microsoft. SERVICENOW → ServiceNow. Always apply (a) first.
+     - Tiebreaker when truly uncertain: proper-case. The user can manually re-uppercase a wrongly-cased brand more easily than they can recover a wrongly-preserved shouted word.
 
    **(d) Multi-word ALL CAPS that contains a likely acronym** (e.g., "ABC LOGISTICS"): proper-case the descriptors but preserve the acronym → "ABC Logistics". "DEF CORPORATION" → after Rule 1: "DEF" alone.
 
-   **(e) Multi-word ALL CAPS that's clearly a shouted common phrase** (e.g., "GREENLIGHT FINANCIAL", "STELLAR DYNAMICS"): apply proper case → "Greenlight Financial", "Stellar Dynamics".
+   **(e) Multi-word ALL CAPS that's clearly a shouted common phrase** (e.g., "GREENLIGHT FINANCIAL", "STELLAR DYNAMICS"): apply proper case → "Greenlight Financial", "Stellar Dynamics". This applies to multi-word brand names too: "HOWARD & HOWARD" → "Howard & Howard"; "BLACK & DECKER" → "Black & Decker"; "BATES & SONS" → "Bates & Sons"; "MARSH & MCLENNAN" → "Marsh & McLennan"; "JOHNSON & JOHNSON" → "Johnson & Johnson". The (b) preservation rule applies ONLY to single-word inputs — multi-word ALL CAPS phrases ALWAYS get proper-cased here.
 
-   **(f) Mixed-case or lowercase input:** apply proper case. "abc logistics" → "ABC Logistics"; "google" → "Google"; "northwind traders" → "Northwind Traders".
+   **(f) Mixed-case or lowercase input: apply PROPER CASE (not ALL CAPS).** "abc logistics" → "ABC Logistics"; "google" → "Google"; "northwind traders" → "Northwind Traders"; "beacon" → "Beacon"; "pioneer" → "Pioneer"; "compass" → "Compass". Do NOT uppercase 6+ letter lowercase inputs to "BEACON" or "PIONEER" — proper case is the right answer for any non-acronym lowercase input. The lowercase-to-uppercase normalization in (b-i) is ONLY for 2-5 letter acronym-shaped inputs.
 
-   **(g) Already-correct mixed-case brand names:** keep as-is. eBay, iHeart, iRobot, McDonald's, Coca-Cola, Procter & Gamble, etc.
+   **(g) Already-correct mixed-case brand names — keep as-is.** eBay, iHeart, iRobot, McDonald's, Coca-Cola, Procter & Gamble, Forge, Apex, Pinnacle, Beacon, Pioneer, etc. If the user already typed it in proper case ("Forge", "Pinnacle", "Beacon"), leave it alone — do NOT re-uppercase it to "FORGE" / "PINNACLE" / "BEACON". Mixed-case proper inputs PASS THROUGH UNCHANGED at every length.
 
    Keep apostrophes and ampersands when integral. When in doubt about ALL CAPS, PRESERVE rather than null — but DO normalize to canonical brand stylization when (a) applies.
 
@@ -324,6 +328,48 @@ Output (cleanedName): NASA
 
 Input (companyName): "tsf"
 Output (cleanedName): TSF
+
+Input (companyName): "Forge"
+Output (cleanedName): Forge
+
+Input (companyName): "Beacon"
+Output (cleanedName): Beacon
+
+Input (companyName): "Pinnacle"
+Output (cleanedName): Pinnacle
+
+Input (companyName): "beacon"
+Output (cleanedName): Beacon
+
+Input (companyName): "pioneer"
+Output (cleanedName): Pioneer
+
+Input (companyName): "compass"
+Output (cleanedName): Compass
+
+Input (companyName): "GLOBEX"
+Output (cleanedName): Globex
+
+Input (companyName): "BEACON"
+Output (cleanedName): Beacon
+
+Input (companyName): "PIONEER"
+Output (cleanedName): Pioneer
+
+Input (companyName): "PINNACLE"
+Output (cleanedName): Pinnacle
+
+Input (companyName): "AFFIRM"
+Output (cleanedName): Affirm
+
+Input (companyName): "HOWARD & HOWARD"
+Output (cleanedName): Howard & Howard
+
+Input (companyName): "BLACK & DECKER"
+Output (cleanedName): Black & Decker
+
+Input (companyName): "BATES & SONS"
+Output (cleanedName): Bates & Sons
 
 Input (companyName): "GREENLIGHT FINANCIAL LLC"
 Output (cleanedName): Greenlight Financial
