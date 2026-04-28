@@ -118,29 +118,62 @@ limiter = Limiter(key_func=_rate_limit_key)
 def _suggest_column(kind: str, columns: list[str]) -> str | None:
     """Heuristic: pick a column whose name looks right for this kind.
 
-    Iteration is hint-major: we walk hints in priority order and match the
-    first column that contains it. This matters when a CSV has both "First
-    Name" and "Company Name" — a column-major loop would hit "First Name"
-    against the generic "name" fallback before ever trying "company". The
-    hint lists are kept disjoint enough that "company" never matches a
-    first-name column and "first" never matches a company column.
+    Two-tier matching with cross-contamination guards:
+
+    * *Strong* hints are unambiguous (e.g. "company name", "first name").
+      Exact matches win first; substring matches second.
+    * *Weak* hints are single tokens that can collide ("account" matches
+      "Account First Name", "first" matches "Firstborn"). We only consider
+      a weak hint match if the column doesn't ALSO match the other side's
+      strong hints — otherwise "Account First Name" gets correctly classed
+      as a name column instead of a company column.
     """
-    hints = {
-        "company": ["company", "account name", "account", "organization",
-                    "organisation", "business", "brand"],
-        "name": ["first name", "first_name", "firstname", "given name",
-                 "given_name", "givenname", "first"],
-    }[kind]
+    name_strong = ["first name", "first_name", "firstname",
+                   "given name", "given_name", "givenname"]
+    name_weak = ["first"]
+    company_strong = ["company name", "company_name", "companyname",
+                      "company", "account name", "account_name", "accountname"]
+    company_weak = ["account", "organization", "organisation", "business", "brand"]
+
     lowered = [(c, c.lower()) for c in columns]
-    # Exact-match pass: best signal wins.
-    for h in hints:
+
+    def looks_like_name(low: str) -> bool:
+        return any(h in low for h in name_strong + name_weak)
+
+    def looks_like_company(low: str) -> bool:
+        return any(h in low for h in company_strong)
+
+    if kind == "company":
+        # Tier 1: exact match on a strong hint.
+        for h in company_strong:
+            for c, low in lowered:
+                if low == h:
+                    return c
+        # Tier 2: substring on a strong hint, excluding name-flavored columns.
+        for h in company_strong:
+            for c, low in lowered:
+                if h in low and not looks_like_name(low):
+                    return c
+        # Tier 3: weak hints, excluding name-flavored columns.
+        for h in company_weak:
+            for c, low in lowered:
+                if h in low and not looks_like_name(low):
+                    return c
+        return None
+
+    # kind == "name"
+    for h in name_strong:
         for c, low in lowered:
             if low == h:
                 return c
-    # Substring-match pass.
-    for h in hints:
+    for h in name_strong:
         for c, low in lowered:
             if h in low:
+                return c
+    # Weak: avoid "first" matching a column that's clearly a company.
+    for h in name_weak:
+        for c, low in lowered:
+            if h in low and not looks_like_company(low):
                 return c
     return None
 
@@ -542,6 +575,9 @@ async def preview(
         raise HTTPException(400, f"preview read failed: {type(e).__name__}: {e}") from e
 
     if body.column not in df.columns:
+        audit("preview", email=_email_from_request(request), session_id=sid,
+              kind=sess.kind, column=body.column, count=0,
+              note="column missing from chunk")
         return {"column": body.column, "rows": []}
 
     vals = df[body.column].astype(str).tolist()
@@ -555,6 +591,8 @@ async def preview(
         }
         for i, v in enumerate(vals)
     ]
+    audit("preview", email=_email_from_request(request), session_id=sid,
+          kind=sess.kind, column=body.column, count=len(rows))
     return {"column": body.column, "rows": rows}
 
 

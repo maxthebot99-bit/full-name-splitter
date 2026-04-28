@@ -22,7 +22,7 @@ export function N2Topbar({ view }: Props) {
   const setActive = useStore((s) => s.setActive);
   const whoami = useStore((s) => s.whoami);
   const setSettingsOpen = useStore((s) => s.setSettingsModalOpen);
-  // Re-render the back button when dry-run state flips.
+  // Re-render when dry-run flips so the back-button label re-evaluates.
   const dryRun = useStore((s) => s[s.active].dryRun);
   const dryRunLoading = useStore((s) => s[s.active].dryRunLoading);
   void dryRun;
@@ -34,10 +34,10 @@ export function N2Topbar({ view }: Props) {
       style={{
         display: 'flex',
         alignItems: 'center',
-        gap: 14,
-        rowGap: 8,
-        padding: '10px 20px',
-        minHeight: 56,
+        gap: 18,
+        rowGap: 10,
+        padding: '10px 22px',
+        minHeight: 60,
         borderBottom: `1px solid ${N2.hair}`,
         background: 'rgba(14,15,23,0.55)',
         backdropFilter: 'blur(24px)',
@@ -45,27 +45,40 @@ export function N2Topbar({ view }: Props) {
         flexWrap: 'wrap',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14, flex: '0 1 auto', minWidth: 0 }}>
+      {/* Brand block: back button (when relevant) + brand mark + tabs.
+          Sits as one logical group with subtle internal hairlines so the
+          three sub-elements read as related rather than three separate
+          floating chips. */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 14,
+          flex: '0 1 auto',
+          minWidth: 0,
+        }}
+      >
         {back && (
           <button
             type="button"
             onClick={back.onClick}
             title={back.label}
+            aria-label={back.label}
             style={{
               background: 'transparent',
               border: `1px solid ${N2.hair2}`,
               color: N2.text2,
-              padding: '6px 12px',
+              padding: '6px 10px',
               borderRadius: 2,
               fontFamily: fMono,
               fontSize: 10,
-              letterSpacing: 1.6,
+              letterSpacing: 1.4,
               textTransform: 'uppercase',
               fontWeight: 600,
               cursor: 'pointer',
               display: 'inline-flex',
               alignItems: 'center',
-              gap: 8,
+              gap: 6,
               transition: 'background .12s ease, color .12s ease, border-color .12s ease',
             }}
           >
@@ -82,17 +95,31 @@ export function N2Topbar({ view }: Props) {
             letterSpacing: -0.5,
             fontWeight: 400,
             fontVariationSettings: '"opsz" 72, "SOFT" 100',
+            whiteSpace: 'nowrap',
           }}
         >
           Cleaners Hub
         </div>
-        {/* Tab switcher — Companies / First Names */}
-        <div style={{ display: 'flex', gap: 2, marginLeft: 6 }}>
-          <TabBtn label="Companies" kind="company" active={active} onSelect={setActive} />
-          <TabBtn label="First Names" kind="name" active={active} onSelect={setActive} />
+        <Divider />
+        {/* Segmented tab control — single connected pill rather than two
+            separate buttons. Reads as one switch instead of two chips. */}
+        <div
+          role="tablist"
+          aria-label="Cleaner kind"
+          style={{
+            display: 'inline-flex',
+            border: `1px solid ${N2.hair2}`,
+            borderRadius: 2,
+            overflow: 'hidden',
+          }}
+        >
+          <SegBtn label="Companies" kind="company" active={active} onSelect={setActive} />
+          <SegBtn label="First Names" kind="name" active={active} onSelect={setActive} last />
         </div>
       </div>
 
+      {/* Status pill — center of mass when there's room; pushed right by
+          marginLeft:auto. Single visual element, not three glued together. */}
       <div
         style={{
           fontFamily: fMono,
@@ -100,19 +127,24 @@ export function N2Topbar({ view }: Props) {
           color: l.color,
           letterSpacing: 2.5,
           textTransform: 'uppercase',
-          display: 'flex',
+          display: 'inline-flex',
           alignItems: 'center',
           gap: 8,
+          padding: '6px 12px',
+          border: `1px solid ${l.color}33`,
+          background: `${l.color}10`,
+          borderRadius: 2,
           flex: '0 0 auto',
           marginLeft: 'auto',
+          whiteSpace: 'nowrap',
         }}
       >
         <span
           style={{
-            width: 4,
-            height: 4,
+            width: 5,
+            height: 5,
             background: l.color,
-            borderRadius: 2,
+            borderRadius: 3,
             boxShadow: `0 0 6px ${l.color}`,
             animation: view === 'running' ? 'n2Pulse 1.5s ease-in-out infinite' : 'none',
           }}
@@ -120,67 +152,61 @@ export function N2Topbar({ view }: Props) {
         {l.txt}
       </div>
 
+      {/* Right block: spend → history → settings → grok chip.
+          Separated from status by gap; chrome buttons share one outline
+          group so they read as related actions, not three loose chips. */}
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: 10,
-          justifyContent: 'flex-end',
+          gap: 12,
           flex: '0 0 auto',
         }}
       >
         {whoami && (
-          <span
-            title={`signed in as ${whoami.email}`}
-            style={{
-              fontFamily: fMono,
-              fontSize: 10,
-              color: N2.text3,
-              letterSpacing: 0.5,
-            }}
-          >
-            ${whoami.today_usd.toFixed(2)} / ${whoami.cap_usd.toFixed(0)}
-          </span>
-        )}
-        <button
-          type="button"
-          onClick={() => openHistory()}
-          title="View past runs"
-          style={chromeBtn()}
-        >
-          history
-        </button>
-        {whoami?.is_admin && (
-          <button
-            type="button"
-            onClick={() => setSettingsOpen(true)}
-            title="Admin settings"
-            style={chromeBtn()}
-          >
-            settings
-          </button>
+          <SpendBadge
+            today={whoami.today_usd}
+            cap={whoami.cap_usd}
+            email={whoami.email}
+          />
         )}
         <div
+          role="group"
+          aria-label="actions"
           style={{
-            display: 'flex',
+            display: 'inline-flex',
+            border: `1px solid ${N2.hair2}`,
+            borderRadius: 2,
+            overflow: 'hidden',
+          }}
+        >
+          <ChromeBtn label="History" onClick={() => openHistory()} />
+          {whoami?.is_admin && (
+            <ChromeBtn label="Settings" onClick={() => setSettingsOpen(true)} last />
+          )}
+        </div>
+        <div
+          style={{
+            display: 'inline-flex',
             alignItems: 'center',
             gap: 8,
-            padding: '4px 10px 4px 5px',
+            padding: '5px 12px 5px 6px',
             border: `1px solid ${N2.hair}`,
             borderRadius: 100,
             fontSize: 11,
             color: N2.text2,
+            whiteSpace: 'nowrap',
           }}
         >
           <span
             style={{
-              width: 20,
-              height: 20,
+              width: 22,
+              height: 22,
               borderRadius: 100,
               background: '#000',
               display: 'grid',
               placeItems: 'center',
-              fontSize: 10,
+              fontSize: 11,
               fontWeight: 700,
               color: '#fff',
               fontFamily: fBody,
@@ -206,44 +232,124 @@ export function N2Topbar({ view }: Props) {
   );
 }
 
-function chromeBtn(): React.CSSProperties {
-  return {
-    background: 'transparent',
-    border: `1px solid ${N2.hair2}`,
-    color: N2.text2,
-    padding: '6px 10px',
-    borderRadius: 2,
-    fontFamily: fMono,
-    fontSize: 9.5,
-    letterSpacing: 1.4,
-    textTransform: 'uppercase',
-    fontWeight: 600,
-    cursor: 'pointer',
-  };
+function Divider() {
+  return (
+    <span
+      aria-hidden
+      style={{
+        width: 1,
+        height: 18,
+        background: N2.hair,
+        display: 'inline-block',
+      }}
+    />
+  );
 }
 
-function TabBtn({
+function SpendBadge({
+  today,
+  cap,
+  email,
+}: {
+  today: number;
+  cap: number;
+  email: string;
+}) {
+  const pct = cap > 0 ? Math.min(100, (today / cap) * 100) : 0;
+  const tone = pct >= 90 ? N2.rose : pct >= 60 ? N2.ochre : N2.text3;
+  return (
+    <span
+      title={`${email} · today $${today.toFixed(2)} / cap $${cap.toFixed(2)}`}
+      style={{
+        fontFamily: fMono,
+        fontSize: 10,
+        color: N2.text2,
+        letterSpacing: 0.4,
+        display: 'inline-flex',
+        alignItems: 'baseline',
+        gap: 4,
+        padding: '5px 10px',
+        border: `1px solid ${N2.hair2}`,
+        borderRadius: 2,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      <span style={{ color: tone, fontWeight: 600 }}>${today.toFixed(2)}</span>
+      <span style={{ color: N2.text4 }}>/</span>
+      <span style={{ color: N2.text3 }}>${cap.toFixed(0)}</span>
+    </span>
+  );
+}
+
+function ChromeBtn({
+  label,
+  onClick,
+  last,
+}: {
+  label: string;
+  onClick: () => void;
+  last?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        background: 'transparent',
+        border: 'none',
+        borderRight: last ? 'none' : `1px solid ${N2.hair2}`,
+        color: N2.text2,
+        padding: '6px 14px',
+        fontFamily: fMono,
+        fontSize: 10,
+        letterSpacing: 1.4,
+        textTransform: 'uppercase',
+        fontWeight: 600,
+        cursor: 'pointer',
+        transition: 'background .12s ease, color .12s ease',
+      }}
+      onMouseEnter={(e) => {
+        const el = e.currentTarget as HTMLButtonElement;
+        el.style.background = 'rgba(199,179,255,0.06)';
+        el.style.color = N2.text;
+      }}
+      onMouseLeave={(e) => {
+        const el = e.currentTarget as HTMLButtonElement;
+        el.style.background = 'transparent';
+        el.style.color = N2.text2;
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+function SegBtn({
   label,
   kind,
   active,
   onSelect,
+  last,
 }: {
   label: string;
   kind: Kind;
   active: Kind;
   onSelect: (k: Kind) => void;
+  last?: boolean;
 }) {
   const on = active === kind;
   return (
     <button
       type="button"
+      role="tab"
+      aria-selected={on}
       onClick={() => onSelect(kind)}
       style={{
-        background: on ? 'rgba(199,179,255,0.10)' : 'transparent',
-        border: `1px solid ${on ? N2.accent : N2.hair2}`,
+        background: on ? 'rgba(199,179,255,0.12)' : 'transparent',
+        border: 'none',
+        borderRight: last ? 'none' : `1px solid ${N2.hair2}`,
         color: on ? N2.accent : N2.text3,
-        padding: '6px 12px',
-        borderRadius: 2,
+        padding: '7px 14px',
         fontFamily: fMono,
         fontSize: 10,
         letterSpacing: 1.6,
@@ -251,7 +357,7 @@ function TabBtn({
         fontWeight: 700,
         cursor: 'pointer',
         boxShadow: on
-          ? '0 0 0 1px rgba(199,179,255,0.18), 0 0 14px rgba(199,179,255,0.14)'
+          ? `inset 0 -2px 0 ${N2.accent}`
           : 'none',
         transition: 'all .12s ease',
       }}
