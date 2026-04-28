@@ -1,0 +1,14 @@
+[Unit]
+Description=Poll for cleaners-hub deploys every minute
+
+[Timer]
+# 2-minute delay after boot so the OS settles + cloudflared comes up
+# first; then poll every 60s. AccuracySec is loose so neighboring timers
+# can batch in the same wake-up.
+OnBootSec=2min
+OnUnitActiveSec=1min
+AccuracySec=15s
+Unit=cleaners-hub-autodeploy.service
+
+[Install]
+WantedBy=timers.target

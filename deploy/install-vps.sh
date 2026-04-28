@@ -200,6 +200,27 @@ systemctl enable "${APP_NAME}.service"
 systemctl restart "${APP_NAME}.service"
 sleep 3
 
+# ─── auto-deploy timer (idempotent) ──────────────────────────────────────────
+# Polls origin/main every 60s and re-runs this script if a new commit is
+# present. After the first install of these files, every git push to main
+# is picked up within ~60s without anyone touching the VPS.
+
+AUTODEPLOY_UNIT="${APP_NAME}-autodeploy"
+AUTODEPLOY_SVC_PATH="/etc/systemd/system/${AUTODEPLOY_UNIT}.service"
+AUTODEPLOY_TIMER_PATH="/etc/systemd/system/${AUTODEPLOY_UNIT}.timer"
+
+if [[ -f "$APP_DIR/deploy/${AUTODEPLOY_UNIT}.service" \
+   && -f "$APP_DIR/deploy/${AUTODEPLOY_UNIT}.timer" \
+   && -f "$APP_DIR/deploy/auto-deploy.sh" ]]; then
+    echo "[install] installing ${AUTODEPLOY_UNIT}.timer ..."
+    chmod 755 "$APP_DIR/deploy/auto-deploy.sh"
+    cp "$APP_DIR/deploy/${AUTODEPLOY_UNIT}.service" "$AUTODEPLOY_SVC_PATH"
+    cp "$APP_DIR/deploy/${AUTODEPLOY_UNIT}.timer"   "$AUTODEPLOY_TIMER_PATH"
+    chmod 644 "$AUTODEPLOY_SVC_PATH" "$AUTODEPLOY_TIMER_PATH"
+    systemctl daemon-reload
+    systemctl enable --now "${AUTODEPLOY_UNIT}.timer"
+fi
+
 if [[ $NEED_CF_RESTART -eq 1 ]]; then
     echo "[install] restarting cloudflared (nohup so SSH survives) ..."
     nohup systemctl restart cloudflared.service >/dev/null 2>&1 &
@@ -217,6 +238,7 @@ echo "/api/health:   $(curl -s -m 5 "http://127.0.0.1:${PORT}/api/health" || ech
 echo
 echo "Public URL:    https://${HOSTNAME_FQDN}"
 echo "Logs:          journalctl -u ${APP_NAME}.service -f"
+echo "Auto-deploy:   $(systemctl is-active "${APP_NAME}-autodeploy.timer" 2>/dev/null || echo 'inactive')"
 echo "Kill switch:   systemctl stop ${APP_NAME}.service"
 echo
 echo "[install] done."
