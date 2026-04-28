@@ -6,16 +6,7 @@ import { useLiveTelemetry } from '../../../hooks';
 import type { AppState } from '../../../types';
 import { useStore } from '../../../store';
 import { SPARKLINE } from '../../../utils/fixtures';
-
-function fmtK(n: number): string {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
-  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
-  return Math.round(n).toString();
-}
-
-function fmtInt(n: number): string {
-  return Math.round(n).toLocaleString('en-US');
-}
+import { fmtCost, fmtInt, fmtK } from '../../../utils/format';
 
 export function N2Telemetry({ view }: { view: AppState }) {
   const slice = useStore((s) => s[s.active]);
@@ -43,7 +34,7 @@ export function N2Telemetry({ view }: { view: AppState }) {
     ['Tokens out', fmtK(live.tokensOut), N2.text],
     ['Nulls', fmtInt(t.nullCount), N2.rose],
     ['API calls', fmtInt(t.rulesFired), N2.text],
-    ['Cost', `$${live.costUsd.toFixed(2)}`, N2.accent],
+    ['Cost', fmtCost(live.costUsd), N2.accent],
   ];
 
   return (

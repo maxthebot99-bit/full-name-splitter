@@ -1,16 +1,10 @@
 import { N2, fMono } from '../../theme';
 import type { AppState } from '../../types';
 import { useStore } from '../../store';
+import { fmtCost, fmtInt } from '../../utils/format';
 
 interface Props {
   view: AppState;
-}
-
-function fmtInt(n: number): string {
-  return n.toLocaleString('en-US');
-}
-function fmtCost(n: number): string {
-  return `$${n.toFixed(2)}`;
 }
 
 export function N2Footer({ view }: Props) {

@@ -10,21 +10,13 @@ import {
   startRun,
 } from '../../lib/actions';
 import { estimateRunCost } from '../../api';
+import { fmtCost } from '../../utils/format';
 import { N2SidebarHeadline } from './sidebar/N2SidebarHeadline';
 import { N2FileCard } from './sidebar/N2FileCard';
 import { N2EmptyDrop } from './sidebar/N2EmptyDrop';
 import { N2CtaPrimary } from './sidebar/N2CtaPrimary';
 import { N2Progress } from './sidebar/N2Progress';
 import { N2Telemetry } from './sidebar/N2Telemetry';
-
-// Sub-cent costs round to "$0.00" with toFixed(2), which under-reads
-// reality on small files. Shift to 4-decimal display below $0.01 so a
-// 749-row estimate renders as "$0.0082" instead of a misleading "$0.01".
-function fmtCost(n: number) {
-  if (n <= 0) return '$0.00';
-  if (n < 0.01) return `$${n.toFixed(4)}`;
-  return `$${n.toFixed(2)}`;
-}
 
 export function N2Sidebar({ view }: { view: AppState }) {
   const slice = useStore((s) => s[s.active]);
