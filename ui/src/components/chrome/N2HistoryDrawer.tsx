@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { N2, fSerif, fMono, fBody } from '../../theme';
 import { useStore } from '../../store';
 import { closeHistory, openHistory, pastRunDownloadUrl } from '../../lib/actions';
@@ -16,6 +16,16 @@ export function N2HistoryDrawer() {
   // this toggle, so we just hide the control for them — there's nothing
   // to toggle. Admins see all runs by default and can scope to their own.
   const [mineOnly, setMineOnly] = useState(false);
+
+  // Escape closes the drawer.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeHistory();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open]);
 
   if (!open) return null;
 

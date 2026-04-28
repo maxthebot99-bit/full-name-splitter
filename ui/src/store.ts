@@ -255,10 +255,19 @@ export const useStore = create<Store>((set, get) => {
 // Backend pushes events with these kinds (see workers.py / streaming.py):
 //   hello | state | rows | row_update | telemetry | error | spend_cap_hit
 // The slice is determined by the sid/kind context the caller passed in.
+// `expectedSid` is the sid that owned the stream at subscription time —
+// if the slice's current sid has rotated (user reset and re-uploaded),
+// we drop the event so leftover frames from the old stream can't bleed
+// into the new session's state.
 
-export function handleSseEvent(kind: Kind, ev: SseEvent): void {
+export function handleSseEvent(kind: Kind, ev: SseEvent, expectedSid?: string): void {
   const s = useStore.getState();
   const slice = s[kind];
+  if (expectedSid && slice.sid && slice.sid !== expectedSid) {
+    // Stale stream — the slice's session has been replaced since this
+    // handler was attached. Discard.
+    return;
+  }
   switch (ev.kind) {
     case 'hello':
       // {sid} — no-op; we already know the sid.
@@ -282,11 +291,11 @@ export function handleSseEvent(kind: Kind, ev: SseEvent): void {
       const t = ev.payload as Partial<Telemetry>;
       s.setTelemetry(kind, t);
       // Backend telemetry doesn't include processed/total — derive from rows
-      // so the progress bar and big % counter update on every batch.
-      const total = slice.file?.rows ?? 0;
-      const processed = useStore.getState()[kind].rows.filter(
-        (r) => r.status !== 'pending',
-      ).length;
+      // by re-reading the LIVE slice (not the snapshot above, which can be
+      // stale by the time SSE events trickle in over a long run).
+      const live = useStore.getState()[kind];
+      const total = live.file?.rows ?? 0;
+      const processed = live.rows.filter((r) => r.status !== 'pending').length;
       const elapsedHint = (t as { elapsed_s?: number }).elapsed_s;
       s.setProgress(kind, {
         processed,
@@ -294,11 +303,11 @@ export function handleSseEvent(kind: Kind, ev: SseEvent): void {
         elapsedSeconds:
           typeof elapsedHint === 'number'
             ? elapsedHint
-            : slice.progress.elapsedSeconds,
+            : live.progress.elapsedSeconds,
         etaSeconds:
           processed > 0 && total > 0 && t.rowsPerSecond
             ? Math.max(0, (total - processed) / Math.max(0.1, t.rowsPerSecond))
-            : slice.progress.etaSeconds,
+            : live.progress.etaSeconds,
       });
       break;
     }

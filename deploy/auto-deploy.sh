@@ -13,25 +13,25 @@ ASKPASS="/usr/local/bin/github-pat-askpass"
 cd "$SOURCE_DIR"
 
 # git refuses to operate on a repo owned by another user (kianna here)
-# when invoked as root unless the directory is in safe.directory. Inline
-# `-c safe.directory=…` on every call so we don't have to touch root's
-# global gitconfig.
-GIT="git -c safe.directory=$SOURCE_DIR"
+# when invoked as root unless the directory is in safe.directory. Use an
+# array so SOURCE_DIR can contain spaces / metacharacters without
+# fragile word-splitting through an unquoted scalar.
+GIT=(git -c "safe.directory=${SOURCE_DIR}")
 
 if [[ -x "$ASKPASS" ]]; then
     GIT_TERMINAL_PROMPT=0 GIT_ASKPASS="$ASKPASS" \
-        $GIT -c credential.helper= fetch origin main --quiet
+        "${GIT[@]}" -c credential.helper= fetch origin main --quiet
 else
-    $GIT fetch origin main --quiet
+    "${GIT[@]}" fetch origin main --quiet
 fi
 
-LOCAL=$($GIT rev-parse HEAD)
-REMOTE=$($GIT rev-parse origin/main)
+LOCAL=$("${GIT[@]}" rev-parse HEAD)
+REMOTE=$("${GIT[@]}" rev-parse origin/main)
 
 if [[ "$LOCAL" == "$REMOTE" ]]; then
     exit 0
 fi
 
 echo "[autodeploy] new commit detected: ${LOCAL:0:7} → ${REMOTE:0:7}"
-$GIT reset --hard origin/main --quiet
+"${GIT[@]}" reset --hard origin/main --quiet
 exec "$INSTALL_SCRIPT"

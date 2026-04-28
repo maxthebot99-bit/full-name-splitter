@@ -402,7 +402,11 @@ function openSseFor(kind: Kind): void {
   if (!slice.sid) return;
   // Close any existing stream before opening a new one.
   slice.eventStream?.close();
-  const es = openEventStream(slice.sid, (ev) => handleSseEvent(kind, ev));
+  // Capture the sid at subscription time and pass it through the
+  // dispatcher. If the slice gets reset and re-uploaded later, leftover
+  // frames from this stream are discarded by handleSseEvent.
+  const sid = slice.sid;
+  const es = openEventStream(sid, (ev) => handleSseEvent(kind, ev, sid));
   s.setEventStream(kind, es);
 }
 

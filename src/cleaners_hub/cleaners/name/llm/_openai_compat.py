@@ -25,12 +25,37 @@ def _stop_by_exc(retry_state) -> bool:
     return retry_state.attempt_number >= 5
 
 
+def _scrub_output_value(s: str) -> str:
+    """Sanitize a single LLM-returned string before it lands in CSV / SSE.
+
+    See company/llm/_openai_compat.py for the full rationale — same logic.
+    """
+    if not s:
+        return s
+    out_chars = []
+    for ch in s:
+        code = ord(ch)
+        if code in (9, 10, 13):
+            out_chars.append(" ")
+        elif code < 32:
+            continue
+        else:
+            out_chars.append(ch)
+    cleaned = "".join(out_chars).strip()
+    if cleaned and cleaned[0] in ("=", "@", "+", "-"):
+        cleaned = "'" + cleaned
+    return cleaned
+
+
 def _parse_outputs(content: str, expected_n: int) -> list[CleanOutput]:
     """Extract the outputs array from a model response. Tolerant of code fences.
 
     Accepts two shapes for backwards-compatibility with older prompt variants:
       • new: [{"cleaned": "Foo", "why": "reason"}, ...]
       • old: ["Foo", "null", ...]  (reason defaults to "")
+
+    All extracted strings pass through _scrub_output_value to defang
+    Excel-formula-injection payloads and strip control chars.
     """
     txt = content.strip()
     if txt.startswith("```"):
@@ -49,6 +74,8 @@ def _parse_outputs(content: str, expected_n: int) -> list[CleanOutput]:
                 raise ProviderBadResponseError(f"invalid JSON: {e}") from e
         else:
             raise ProviderBadResponseError(f"invalid JSON: {e}") from e
+    if not isinstance(obj, dict):
+        raise ProviderBadResponseError("response root is not an object")
     outputs = obj.get("outputs")
     if not isinstance(outputs, list):
         raise ProviderBadResponseError("missing 'outputs' array")
@@ -61,20 +88,22 @@ def _parse_outputs(content: str, expected_n: int) -> list[CleanOutput]:
         if v is None:
             parsed.append((None, ""))
         elif isinstance(v, str):
-            cleaned = None if v.strip().lower() == "null" else v.strip()
+            scrubbed = _scrub_output_value(v)
+            cleaned = None if scrubbed.lower() == "null" else scrubbed
             parsed.append((cleaned, ""))
         elif isinstance(v, dict):
             raw_cleaned = v.get("cleaned")
             if raw_cleaned is None:
                 cleaned = None
             elif isinstance(raw_cleaned, str):
-                cleaned = None if raw_cleaned.strip().lower() == "null" else raw_cleaned.strip()
+                scrubbed = _scrub_output_value(raw_cleaned)
+                cleaned = None if scrubbed.lower() == "null" else scrubbed
             else:
                 cleaned = None
             why = v.get("why") or ""
             if not isinstance(why, str):
                 why = str(why)
-            parsed.append((cleaned, why.strip()))
+            parsed.append((cleaned, _scrub_output_value(why)))
         else:
             parsed.append((None, ""))
     return parsed

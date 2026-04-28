@@ -413,6 +413,7 @@ function TallyTab({ active, count, label, countColor, onClick, last }: TallyTabP
     <div
       role="tab"
       tabIndex={0}
+      aria-selected={active}
       onClick={onClick}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {

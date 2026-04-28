@@ -1,16 +1,14 @@
 """SSE pusher — bridges the sync worker thread to an asyncio queue.
 
-Event shapes mirror the legacy PyWebView Pusher exactly so the existing
-React store transitions don't need re-derivation:
+Events emitted by the worker / HTTP handlers (kept in sync with the
+React store's handleSseEvent dispatcher):
 
-  ("error",      {"code": int, "message": str})
-  ("reset",      None)
-  ("file",       {...} | None)
-  ("state",      "empty"|"indexed"|"running"|"done"|"idle"|"error"|"cancelled"|"spend_blocked")
-  ("rows",       list[Row])
-  ("row_update", Row)
-  ("telemetry",  {...})
-  ("xai_throttled", {"retry_in_s": int})
+  ("hello",         {"sid": <uuid>})           — sent once on stream open
+  ("state",         "running"|"done"|"cancelled"|"error"|"spend_blocked")
+  ("rows",          list[Row])                 — batch of cleaned rows
+  ("row_update",    Row)                       — single-row rerun / override
+  ("telemetry",     {...})                     — per-batch token + cost stats
+  ("error",         {"code": int, "message": str})
   ("spend_cap_hit", {"today_usd": float, "cap_usd": float})
 
 A ``Pusher`` is bound to one session and can be called from any thread; it
@@ -75,21 +73,30 @@ async def sse_event_stream(session) -> AsyncIterator[bytes]:
 
     Sends a heartbeat every 15s so Cloudflare Tunnel + intermediate proxies
     don't time out idle connections during long uploads or thinking phases.
+    Increments session.active_sse_count while open so the idle sweeper
+    won't delete a session out from under a connected reader.
     """
     q = session.event_queue
     if q is None:
         return
-    yield format_sse({"kind": "hello", "payload": {"sid": session.sid}})
-    while True:
-        try:
-            event = await asyncio.wait_for(q.get(), timeout=15.0)
-        except asyncio.TimeoutError:
-            yield b": heartbeat\n\n"
-            continue
-        yield format_sse(event)
-        if event.get("kind") == "state" and event.get("payload") in (
-            "done", "error", "cancelled", "spend_blocked"
-        ):
-            # One last heartbeat so the client sees a clean close, then exit.
-            yield b": stream-end\n\n"
-            return
+    with session.contexts_lock:
+        session.active_sse_count += 1
+    try:
+        yield format_sse({"kind": "hello", "payload": {"sid": session.sid}})
+        while True:
+            try:
+                event = await asyncio.wait_for(q.get(), timeout=15.0)
+            except asyncio.TimeoutError:
+                yield b": heartbeat\n\n"
+                continue
+            yield format_sse(event)
+            if event.get("kind") == "state" and event.get("payload") in (
+                "done", "error", "cancelled", "spend_blocked"
+            ):
+                # One last heartbeat so the client sees a clean close, then exit.
+                yield b": stream-end\n\n"
+                return
+    finally:
+        with session.contexts_lock:
+            session.active_sse_count = max(0, session.active_sse_count - 1)
+        session.touch()  # arms the idle TTL clock now that the reader's gone

@@ -27,6 +27,11 @@ from typing import Any
 
 IDLE_TTL_S: int = 60 * 60  # 60 minutes
 SWEEP_INTERVAL_S: int = 5 * 60  # check every 5 minutes
+# Persistent output retention. Past-run CSVs land under _outputs_root() and
+# are downloadable from the History drawer; without this they accumulate
+# forever (one user reported tracking 800+ runs after a few months on a
+# similar app). Files older than this are reaped by the sweeper.
+OUTPUT_RETENTION_S: int = 30 * 24 * 60 * 60  # 30 days
 
 _log = logging.getLogger("cleaners_hub.sessions")
 
@@ -104,6 +109,19 @@ class Session:
     event_queue: asyncio.Queue[dict[str, Any]] | None = None
     event_loop: asyncio.AbstractEventLoop | None = None
 
+    # Number of currently-open SSE streams reading from this session. The
+    # idle sweeper refuses to delete a session while this is >0 — otherwise
+    # the queue ref under an active reader gets garbage-collected and the
+    # SSE handler hangs/errors. Mutated only under contexts_lock.
+    active_sse_count: int = 0
+
+    # Re-entrant lock for ALL mutations that touch contexts / source_df /
+    # overrides / active_sse_count. Both the worker thread (writing batch
+    # results) and HTTP handlers (▶ rerun, override edit, SSE start/stop)
+    # mutate these — without a lock the list can corrupt under concurrent
+    # writes.
+    contexts_lock: threading.RLock = field(default_factory=threading.RLock)
+
     @property
     def dir(self) -> Path:
         return _sessions_root() / self.sid
@@ -170,14 +188,21 @@ class SessionStore:
         )
 
     def sweep_idle(self) -> int:
-        """Delete sessions inactive for more than IDLE_TTL_S. Returns count."""
+        """Delete sessions inactive for more than IDLE_TTL_S. Returns count.
+
+        Also skips sessions with at least one SSE stream still attached —
+        deleting under an open stream collapses the queue ref and the
+        client hangs. The stream's own exit decrement re-arms TTL.
+        """
         cutoff = time.time() - IDLE_TTL_S
         to_delete: list[str] = []
         with self._lock:
             for sid, sess in self._sessions.items():
                 if sess.state == "running":
-                    # Don't TTL-out an active run
-                    continue
+                    continue  # don't TTL-out an active run
+                with sess.contexts_lock:
+                    if sess.active_sse_count > 0:
+                        continue  # SSE reader still attached
                 if sess.last_active < cutoff:
                     to_delete.append(sid)
         for sid in to_delete:
@@ -210,12 +235,47 @@ class SessionStore:
 store = SessionStore()
 
 
+def sweep_old_outputs() -> int:
+    """Delete output CSVs older than OUTPUT_RETENTION_S from _outputs_root.
+
+    Past-run CSVs are still listed in history.sqlite3 after deletion — the
+    download endpoint returns 410 ("output file missing on disk") in that
+    case, which the UI surfaces as an inactive download link. Returns the
+    number of files removed.
+    """
+    root = _outputs_root()
+    if not root.exists():
+        return 0
+    cutoff = time.time() - OUTPUT_RETENTION_S
+    removed = 0
+    try:
+        for f in root.iterdir():
+            if not f.is_file():
+                continue
+            try:
+                if f.stat().st_mtime < cutoff:
+                    f.unlink()
+                    removed += 1
+            except OSError as e:
+                _log.warning("output sweep failed for %s: %r", f.name, e)
+    except OSError as e:
+        _log.warning("output sweep iter failed: %r", e)
+    if removed:
+        _log.info(
+            "output_sweep",
+            extra={"action": "output_sweep", "count": removed,
+                   "retention_days": OUTPUT_RETENTION_S // 86400},
+        )
+    return removed
+
+
 async def idle_sweeper_loop() -> None:
-    """Background task: periodically sweep idle sessions. Started in lifespan."""
+    """Background task: periodically sweep idle sessions + stale outputs."""
     while True:
         try:
             await asyncio.sleep(SWEEP_INTERVAL_S)
             store.sweep_idle()
+            sweep_old_outputs()
         except asyncio.CancelledError:
             return
         except Exception as e:

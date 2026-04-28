@@ -1,14 +1,17 @@
 """Email anomaly alerts via Resend.
 
-Triggers (per the v1 hardening spec):
-  * first successful login per email per UTC day
-  * any single run with cost > $1
-  * spend cap hit (once per UTC day)
-  * persistent xAI 5xx errors (cool-down 30 min)
+Triggers wired up today:
+  * first successful login per email per UTC day (login_of_day)
+  * every Begin/Continue cleaning click — no dedup (run_started)
+  * every successful run completion — no dedup (run_completed)
+  * any single run with cost > $5 (costly_run)
+  * spend cap hit, once per UTC day (spend_cap_hit)
+  * admin "Send test email" button in Settings (test_ping)
 
-If ``RESEND_API_KEY_FILE`` is unset or empty, all methods are no-ops — the
-app keeps working, alerts are simply disabled. We log a one-time WARNING at
-startup so an operator notices.
+If ``RESEND_API_KEY_FILE`` is unset / missing / contains the literal
+placeholder ``disabled`` (per ``secrets.get_resend_key``), all methods
+are no-ops — the app keeps working, alerts are simply disabled. We log
+a one-time WARNING at startup so an operator notices.
 
 Recipient is fixed at the Resend-account owner email. Resend's sandbox
 sender (``onboarding@resend.dev``) refuses to deliver to anyone else
@@ -22,7 +25,6 @@ from __future__ import annotations
 import logging
 import sqlite3
 import threading
-import time
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -42,7 +44,6 @@ ALERT_FROM = "onboarding@resend.dev"  # Resend sandbox; works without DNS.
 # Per-row cost is ~$0.000011 — a $5 run is ~454k rows, deeply unusual.
 # $1 was too sensitive (a 91k-row file is normal-ish for sales lists).
 COSTLY_RUN_THRESHOLD_USD = Decimal("5.00")
-XAI_5XX_COOLDOWN_S = 30 * 60  # don't email about xAI errors more than once per 30 min
 
 _log = logging.getLogger("cleaners_hub.alerts")
 
@@ -53,7 +54,6 @@ class AlertSender:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
         self._init_schema()
-        self._xai_5xx_last_alert_ts: float = 0.0
         self._client = None
         self._client_init_error_logged = False
 
@@ -277,20 +277,13 @@ class AlertSender:
             _log.warning("alert_test_failed: %r", e)
             return False, f"{type(e).__name__}: {e}"
 
-    def xai_5xx_persistent(self, *, error_count: int, window_min: int) -> None:
-        now = time.time()
-        if now - self._xai_5xx_last_alert_ts < XAI_5XX_COOLDOWN_S:
-            return
-        self._xai_5xx_last_alert_ts = now
-        self._send(
-            subject="[cleaners-hub] xAI 5xx errors persisting",
-            body=(
-                f"{error_count} 5xx errors from api.x.ai in the last "
-                f"{window_min} minutes.\n"
-                "Pipeline will keep retrying via tenacity; users see "
-                "'paused, retrying' in the UI.\n"
-            ),
-        )
+    # NOTE: an xai_5xx_persistent alert was scaffolded earlier (per the
+    # original plan's hardening list) but never wired into the worker — the
+    # tenacity retry path stays inside clean_batch and there's no
+    # natural callback point to count "persistent" 5xx events. Removed
+    # rather than left as dead code; if Grok 5xx storms become a real
+    # operational issue we'd add it back with a proper counter, not as a
+    # method nobody calls.
 
 
 # Module-level singleton, lazily initialized. Avoids circular imports.

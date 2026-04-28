@@ -257,6 +257,35 @@ def _require_session(sid: str) -> Session:
     return sess
 
 
+def _require_owned_session(request: Request, sid: str) -> Session:
+    """Same as _require_session, plus the requesting email must own the
+    session (or be admin). Used on every per-sid live route — events,
+    download, run, dry-run, preview, dry-run-sample, columns, rows,
+    rerun-row, cancel — so a coworker can't read another's session by
+    sniffing/guessing the UUID. Returns 404 (not 403) when the session
+    exists but isn't yours, matching the historical-runs gate, so an
+    unauthorized user can't probe the session-id space."""
+    sess = _require_session(sid)
+    email = _email_from_request(request)
+    if _is_admin(email):
+        return sess
+    owner = (sess.email or "").lower()
+    if owner and owner != email.lower():
+        raise HTTPException(404, detail="session not found or expired")
+    return sess
+
+
+def _safe_500(action: str, exc: Exception) -> HTTPException:
+    """Build a generic 500 response. Logs the real exception (with
+    traceback) server-side via the audit log, but returns a safe message
+    to the client so we never leak exception text — which can include the
+    xAI key if a library raises with the request URL embedded."""
+    audit(f"{action}_error", error=f"{type(exc).__name__}: {exc!r}",
+          level=logging.ERROR)
+    _log.exception("%s_error", action)
+    return HTTPException(500, detail=f"internal error during {action}")
+
+
 # ─── Pydantic bodies ────────────────────────────────────────────────────────
 
 class RunBody(BaseModel):
@@ -374,7 +403,7 @@ async def upload(
 @app.get("/api/columns/{sid}")
 @limiter.limit("60/minute")
 async def list_columns(request: Request, sid: str = PathParam(...)) -> dict:
-    sess = _require_session(sid)
+    sess = _require_owned_session(request, sid)
     if sess.upload_path is None:
         raise HTTPException(409, "no file uploaded")
 
@@ -384,7 +413,7 @@ async def list_columns(request: Request, sid: str = PathParam(...)) -> dict:
     try:
         meta = io_reader.inspect(sess.upload_path)
     except Exception as e:
-        raise HTTPException(400, f"file inspect failed: {type(e).__name__}: {e}") from e
+        raise _safe_500("file_inspect", e) from e
 
     sess._file_meta_obj = meta  # used by worker
     sess.row_count = meta.row_count_estimate
@@ -433,7 +462,7 @@ async def dry_run(
     body: RunBody,
     sid: str = PathParam(...),
 ) -> dict:
-    sess = _require_session(sid)
+    sess = _require_owned_session(request, sid)
     meta = getattr(sess, "_file_meta_obj", None)
     if meta is None:
         raise HTTPException(409, "must call /api/columns first")
@@ -469,7 +498,7 @@ async def start_run(
     body: RunBody,
     sid: str = PathParam(...),
 ) -> dict:
-    sess = _require_session(sid)
+    sess = _require_owned_session(request, sid)
     if sess.state == "running":
         raise HTTPException(409, "session already running")
     meta = getattr(sess, "_file_meta_obj", None)
@@ -515,7 +544,7 @@ async def start_run(
 @app.delete("/api/run/{sid}")
 @limiter.limit("10/minute")
 async def cancel_run(request: Request, sid: str = PathParam(...)) -> dict:
-    sess = _require_session(sid)
+    sess = _require_owned_session(request, sid)
     if sess.state != "running":
         return session_public_dict(sess)
     sess.cancel_flag.set()
@@ -526,7 +555,7 @@ async def cancel_run(request: Request, sid: str = PathParam(...)) -> dict:
 
 @app.get("/api/events/{sid}")
 async def events(request: Request, sid: str = PathParam(...)):
-    sess = _require_session(sid)
+    sess = _require_owned_session(request, sid)
     return StreamingResponse(
         sse_event_stream(sess),
         media_type="text/event-stream",
@@ -541,7 +570,7 @@ async def events(request: Request, sid: str = PathParam(...)):
 @app.get("/api/download/{sid}")
 @limiter.limit("30/minute")
 async def download(request: Request, sid: str = PathParam(...)):
-    sess = _require_session(sid)
+    sess = _require_owned_session(request, sid)
     if sess.state != "done" or sess.result_csv_path is None:
         raise HTTPException(409, "no result available")
     out = sess.result_csv_path
@@ -575,7 +604,7 @@ async def preview(
     the preview is consistent with what the actual cleaning will see —
     same encoding/delimiter detection, same malformed-row handling.
     """
-    sess = _require_session(sid)
+    sess = _require_owned_session(request, sid)
     meta = getattr(sess, "_file_meta_obj", None)
     if meta is None:
         raise HTTPException(409, "must call /api/columns first")
@@ -600,8 +629,7 @@ async def preview(
         chunks = io_reader.read_chunks(meta, target_col, chunk_rows=max(n, 100))
         df_chunk = next(iter(chunks), None)
     except Exception as e:
-        _log.warning("preview read_chunks failed: %r", e)
-        raise HTTPException(400, f"preview read failed: {type(e).__name__}: {e}") from e
+        raise _safe_500("preview_read", e) from e
 
     if df_chunk is None or target_col not in df_chunk.columns:
         audit("preview", email=_email_from_request(request), session_id=sid,
@@ -637,7 +665,7 @@ async def dry_run_sample_route(
     body: DryRunSampleBody,
     sid: str = PathParam(...),
 ) -> dict:
-    sess = _require_session(sid)
+    sess = _require_owned_session(request, sid)
     if sess.upload_path is None:
         raise HTTPException(409, "no file uploaded")
     # Run synchronously in a thread-pool slot (clean_batch is sync httpx).
@@ -653,8 +681,7 @@ async def dry_run_sample_route(
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
     except Exception as e:
-        _log.warning("dry_run_sample failed: %r", e)
-        raise HTTPException(500, f"{type(e).__name__}: {e}") from e
+        raise _safe_500("dry_run_sample", e) from e
 
     audit("dry_run_sample_request", email=_email_from_request(request),
           session_id=sid, kind=sess.kind, column=body.column, count=body.count)
@@ -669,7 +696,7 @@ async def override_row(
     sid: str = PathParam(...),
     n: int = PathParam(..., ge=1, le=1_000_000),
 ) -> dict:
-    sess = _require_session(sid)
+    sess = _require_owned_session(request, sid)
     payload = apply_override(sess, n=n, cleaned=body.cleaned)
     if payload is None:
         raise HTTPException(404, f"row {n} not found in session")
@@ -686,15 +713,14 @@ async def rerun_row_route(
     body: RerunRowBody,
     sid: str = PathParam(...),
 ) -> dict:
-    sess = _require_session(sid)
+    sess = _require_owned_session(request, sid)
     loop = asyncio.get_running_loop()
     try:
         payload = await loop.run_in_executor(
             None, lambda: rerun_one_row(sess, n=body.n, spend=_spend)
         )
     except Exception as e:
-        _log.warning("rerun_one_row failed: %r", e)
-        raise HTTPException(500, f"{type(e).__name__}: {e}") from e
+        raise _safe_500("rerun_one_row", e) from e
     if payload is None:
         raise HTTPException(404, f"row {body.n} not found in session")
     audit("rerun_request", email=_email_from_request(request),
@@ -771,6 +797,17 @@ async def download_past_run(request: Request, run_id: str = PathParam(...)):
     if not out_path_str:
         raise HTTPException(410, "no output recorded for this run")
     out = Path(out_path_str)
+    # Defense in depth: history.sqlite3 is the only thing pointing at this
+    # path, but if the DB ever gets a tampered row we don't want the
+    # download endpoint serving arbitrary disk files. Confine to the
+    # outputs root.
+    from cleaners_hub.sessions import _outputs_root
+    try:
+        out.resolve().relative_to(_outputs_root().resolve())
+    except (ValueError, OSError):
+        audit("download_history_path_escape", email=email, session_id=run_id,
+              path=str(out), level=logging.ERROR)
+        raise HTTPException(410, "output file missing on disk")
     if not out.exists():
         raise HTTPException(410, "output file missing on disk")
     base = Path(row.get("filename") or "cleaned").stem
@@ -823,7 +860,9 @@ async def put_settings(request: Request, body: SettingsPatch) -> dict:
     email = _email_from_request(request)
     if not _is_admin(email):
         raise HTTPException(403, "admin only")
-    patch = {k: v for k, v in body.dict().items() if v is not None}
+    # body.dict() is Pydantic v1 API — removed in v2. model_dump() is the
+    # forward-compatible call that works on both.
+    patch = {k: v for k, v in body.model_dump().items() if v is not None}
     if not patch:
         raise HTTPException(400, "no fields to update")
     try:

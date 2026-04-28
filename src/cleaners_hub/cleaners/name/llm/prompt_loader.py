@@ -21,9 +21,44 @@ _SENTINEL_OPEN = "<<INPUT>>"
 _SENTINEL_CLOSE = "<</INPUT>>"
 
 
+# Case-variant + JSON-escape variants that an attacker might use to slip
+# past the literal-string strip. Generated once at import time.
+_SENTINEL_VARIANTS = (
+    _SENTINEL_OPEN, _SENTINEL_OPEN.lower(), _SENTINEL_OPEN.title(),
+    _SENTINEL_CLOSE, _SENTINEL_CLOSE.lower(), _SENTINEL_CLOSE.title(),
+)
+# Max input length before truncation. Long cells (e.g. a 50KB blob pasted
+# into a CSV cell) are almost never legitimate first names — capping
+# prevents both prompt-injection-via-length and surprise token bills.
+_MAX_INPUT_CHARS = 1000
+
+
 def _sanitize_for_sentinels(raw: str) -> str:
-    """Strip accidental sentinel tokens from user data."""
-    return raw.replace(_SENTINEL_OPEN, "").replace(_SENTINEL_CLOSE, "")
+    """Strip sentinel tokens (case-insensitive) and dangerous control chars.
+
+    Anything that could close our DATA envelope or smuggle instructions on
+    a separate line gets neutralized before the string reaches Grok:
+      * sentinel tokens (any case) — replaced
+      * newlines / CR / tab — collapsed to single spaces
+      * other ASCII control chars (<32 except space) — dropped
+      * length capped at _MAX_INPUT_CHARS
+    """
+    s = raw or ""
+    for variant in _SENTINEL_VARIANTS:
+        s = s.replace(variant, "")
+    out_chars = []
+    for ch in s:
+        code = ord(ch)
+        if code in (9, 10, 13):
+            out_chars.append(" ")
+        elif code < 32:
+            continue
+        else:
+            out_chars.append(ch)
+    s = "".join(out_chars)
+    if len(s) > _MAX_INPUT_CHARS:
+        s = s[:_MAX_INPUT_CHARS] + "…"
+    return s
 
 
 def build_batch_tail(raw_names: list[str]) -> str:

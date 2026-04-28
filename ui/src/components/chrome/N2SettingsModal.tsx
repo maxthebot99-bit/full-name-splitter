@@ -3,7 +3,7 @@ import { N2, fSerif, fBody, fMono } from '../../theme';
 import { useStore } from '../../store';
 import { refreshSettings, saveSettings } from '../../lib/actions';
 import { sendTestAlert } from '../../api';
-import type { AppSettingsPatch } from '../../types';
+import type { AppSettings, AppSettingsPatch } from '../../types';
 
 // Admin-only settings modal. Reads /api/settings on open and PUTs a patch
 // of the changed fields. Backend rejects non-admins with 403.
@@ -46,11 +46,30 @@ export function N2SettingsModal() {
     }
   };
 
+  // Escape closes the modal. Hook before early return per React rules.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, setOpen]);
+
   if (!open || !settings) return null;
 
   const isAdmin = whoami?.is_admin ?? false;
-  const get = <K extends keyof AppSettingsPatch>(k: K): AppSettingsPatch[K] =>
-    (draft[k] !== undefined ? draft[k] : (settings as never)[k]);
+  // The patch keys (AppSettingsPatch) are a subset of the full settings
+  // shape (AppSettings), so a properly-typed read can pull the current
+  // value off either object — `as never` previously papered over the
+  // intersection.
+  const get = <K extends keyof AppSettingsPatch>(
+    k: K,
+  ): AppSettingsPatch[K] | AppSettings[K & keyof AppSettings] => {
+    const drafted = draft[k];
+    if (drafted !== undefined) return drafted;
+    return settings[k as K & keyof AppSettings];
+  };
 
   const onSave = async () => {
     if (!isAdmin) return;
@@ -137,7 +156,7 @@ export function N2SettingsModal() {
             min={settings.min_daily_cap_usd}
             max={settings.hard_cap_usd}
             step="0.5"
-            disabled={!isAdmin}
+            disabled={!isAdmin || saving}
             value={get('daily_cap_usd') ?? settings.daily_cap_usd}
             onChange={(e) =>
               setDraft((d) => ({ ...d, daily_cap_usd: Number(e.target.value) }))
@@ -152,7 +171,7 @@ export function N2SettingsModal() {
               type="number"
               min={settings.min_batch_size}
               max={settings.max_batch_size}
-              disabled={!isAdmin}
+              disabled={!isAdmin || saving}
               value={get('batch_size_company') ?? settings.batch_size_company}
               onChange={(e) =>
                 setDraft((d) => ({ ...d, batch_size_company: Number(e.target.value) }))
@@ -165,7 +184,7 @@ export function N2SettingsModal() {
               type="number"
               min={settings.min_batch_size}
               max={settings.max_batch_size}
-              disabled={!isAdmin}
+              disabled={!isAdmin || saving}
               value={get('batch_size_name') ?? settings.batch_size_name}
               onChange={(e) =>
                 setDraft((d) => ({ ...d, batch_size_name: Number(e.target.value) }))
@@ -178,7 +197,7 @@ export function N2SettingsModal() {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
           <Field label="Model · companies">
             <select
-              disabled={!isAdmin}
+              disabled={!isAdmin || saving}
               value={get('model_company') ?? settings.model_company}
               onChange={(e) =>
                 setDraft((d) => ({ ...d, model_company: e.target.value }))
@@ -194,7 +213,7 @@ export function N2SettingsModal() {
           </Field>
           <Field label="Model · names">
             <select
-              disabled={!isAdmin}
+              disabled={!isAdmin || saving}
               value={get('model_name') ?? settings.model_name}
               onChange={(e) =>
                 setDraft((d) => ({ ...d, model_name: e.target.value }))

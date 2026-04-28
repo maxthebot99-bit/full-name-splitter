@@ -5,11 +5,14 @@ Description=Poll for cleaners-hub deploys every minute
 # Fire 30s after the timer is enabled (whether at boot or via install-vps.sh
 # bootstrap), then every 60s after the previous run. OnBootSec alone would
 # only fire shortly after boot; with OnActiveSec we also catch fresh
-# enable-after-install events. AccuracySec is loose so neighboring timers
-# can batch in the same wake-up.
+# enable-after-install events. Persistent=true makes systemd catch up on
+# the most recent missed run after the system is rebooted, so a commit
+# pushed during VPS downtime still lands on next boot. AccuracySec is
+# loose so neighboring timers can batch in the same wake-up.
 OnActiveSec=30s
 OnBootSec=2min
 OnUnitActiveSec=1min
+Persistent=true
 AccuracySec=15s
 Unit=cleaners-hub-autodeploy.service
 

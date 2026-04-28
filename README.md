@@ -15,7 +15,31 @@ Browser (Google OAuth) → Cloudflare Access (4h JWT)
       → outbound HTTPS → api.x.ai/v1/chat/completions
 ```
 
-`/api/upload` (multipart) → `/api/columns` → `/api/dry-run` → `/api/run` → `/api/events` (SSE) → `/api/download`. Static React bundle served from `/`.
+**Live route surface** — full list in `main.py`:
+
+```
+GET  /api/health                liveness ping (no auth, no rate limit)
+GET  /api/whoami                email + soft cap + spend today + is_admin
+POST /api/upload                multipart, ?kind=company|name → {sid, ...}
+GET  /api/columns/{sid}         column list + samples + suggested column
+POST /api/preview/{sid}         raw column values pre-cleaning (no Grok)
+POST /api/dry-run/{sid}         row count + cost estimate (no Grok)
+POST /api/dry-run-sample/{sid}  inline 25-row Grok sample preview
+POST /api/run/{sid}             kicks off the worker thread (202 accepted)
+DELETE /api/run/{sid}           cancel a running session
+GET  /api/events/{sid}          SSE: state, rows, telemetry, error
+GET  /api/download/{sid}        cleaned CSV (live session)
+POST /api/rows/{sid}/{n}        manual cleaned-cell override
+POST /api/rerun-row/{sid}       re-Grok one row
+GET  /api/runs                  history (auto-scoped to caller for non-admins)
+GET  /api/runs/{run_id}         run detail (owner-or-admin only)
+GET  /api/runs/{run_id}/download  re-download a past CSV (owner-or-admin)
+GET  /api/settings              admin runtime settings (caps, models, batches)
+PUT  /api/settings              admin-only patch
+POST /api/admin/test-alert      admin-only Resend test ping
+```
+
+Static React bundle served from `/`.
 
 Both pipelines (`company` + `name`) live under `src/cleaners_hub/cleaners/`. Vendored from the legacy desktop apps; same prompt, same batch sizes, same Grok provider.
 
@@ -47,18 +71,21 @@ Prod uses systemd-creds, not these local files. See "Deploy" below.
 
 ---
 
-## v1 hardening (mandatory, baked in)
+## Hardening (mandatory, baked in)
 
 | Item | Where |
 |---|---|
-| $10/day Grok spend cap | `cleaners_hub.spend.SpendTracker` (SQLite under tempdir) |
+| Daily Grok spend cap | Soft cap default $10/day, admin-tunable up to a $100/day hard ceiling. Hard cap is in code (`spend.SPEND_CAP_USD_PER_DAY`); soft cap lives in `settings.json` under `/var/lib/cleaners-hub/`. |
 | Per-user rate limit | `slowapi` keyed by `Cf-Access-Authenticated-User-Email` |
-| Email anomaly alerts | Resend → `jazif@benchmarkintl.com` |
+| Email anomaly alerts | Resend → `jazif@benchmarkintl.com`. Triggers: first-login-of-day, every run started, every run completed, costly-run (>$5), spend-cap-hit. Sender is the Resend sandbox `onboarding@resend.dev` until a domain is verified. |
 | Structured audit log | JSON to journalctl, schema documented in `cleaners_hub.audit` |
-| Secret redaction filter | `RedactingFilter` drops anything matching `r"xai-[A-Za-z0-9]{20,}"` |
-| CSRF header on `/api/*` | Middleware requires `X-Requested-With: cleaners-hub` |
+| Secret redaction filter | `RedactingFilter` drops anything matching `r"xai-[A-Za-z0-9_\-]{20,}"` from log records |
+| Generic 5xx responses | HTTP 500s never include exception text — full traceback goes to journalctl, only `internal error during <action>` reaches the browser |
+| CSRF header on `/api/*` | Middleware requires `X-Requested-With: cleaners-hub` (download + events + health are exempted; documented in `middleware.py`) |
+| Owner-or-admin checks | All `/api/runs/{id}*` history routes and all per-`{sid}` live routes 404 if the requesting email isn't the session/run owner (or admin) |
+| Output retention | `/var/lib/cleaners-hub/outputs/` swept by the idle sweeper; CSVs older than 30 days are deleted (history.sqlite3 keeps the metadata; download endpoint returns 410 for missing files) |
 | 4h CF Access JWT TTL | Manual setting on the wildcard policy in CF dashboard |
-| systemd hardening | `NoNewPrivileges`, `ProtectSystem=strict`, `PrivateTmp`, etc. — see `deploy/cleaners-hub.service` |
+| systemd hardening | `NoNewPrivileges`, `ProtectSystem=strict`, `PrivateTmp`, `TimeoutStopSec=20`, etc. — see `deploy/cleaners-hub.service`. `MemoryDenyWriteExecute`/`PrivateDevices` were tried and dropped because they break pandas C-extensions (documented in the unit). |
 
 ---
 
@@ -98,24 +125,33 @@ bash /home/kianna/github-repos/cleaners-hub/deploy/install-vps.sh
 BOOT
 ```
 
-**Updates (after first deploy):**
+**Updates (after first deploy):** just push.
 
 ```bash
-git push                              # from your laptop
-ssh kianna@127.0.0.1 -p 2222 'sudo /var/www/dashboard/apps/cleaners-hub/deploy/install-vps.sh'
+git push   # from your laptop
 ```
 
-The script is idempotent — if cloudflared ingress and DNS already exist, it skips them and just refreshes code + venv + restarts the service.
+A `cleaners-hub-autodeploy.timer` on the VPS polls origin/main every 60s, runs `auto-deploy.sh` (which `git fetch` + `git reset --hard` + invokes `install-vps.sh`), and restarts the service. New commits land within ~60-90s with no SSH dance.
+
+To pause / inspect:
+
+```bash
+sudo systemctl stop cleaners-hub-autodeploy.timer        # pause
+sudo journalctl -u cleaners-hub-autodeploy.service -f    # tail deploys
+```
+
+Manual install-vps.sh is always still safe — the script is idempotent — useful when you want to verify a deploy before the timer fires or after a broken-state recovery.
 
 **After first deploy:** in the Cloudflare dashboard, set the Access JWT TTL on the `*.maxcommandcenter.com` policy to 4h.
 
-## v1 limitations (documented, not bugs)
+## Known limitations (documented, not bugs)
 
-- **Sessions don't survive service restarts.** `PrivateTmp=true` wipes `/var/tmp/cleaners-hub/` on every unit start, so any in-flight run is lost on `systemctl restart`. Acceptable for v1; deferred to v2 (move outputs to `/var/lib/cleaners-hub/outputs/`).
-- **No mid-run resume.** If you refresh the browser during a run, the SSE stream drops; the worker keeps going on the server but the new tab can't reconstruct progress. Banner in the UI says don't refresh during a run.
+- **In-flight session memory dies on service restart.** Output CSVs for completed runs persist (under `/var/lib/cleaners-hub/outputs/`, survives `systemctl restart`) but the in-memory session — uploaded file, current run state, SSE queue — is wiped. The worker's last-batch context lives in `session.contexts`, so "Continue cleaning" after a restart works only if the user has the same session ID and re-attaches; in practice they'll re-upload.
+- **No mid-run resume across page refresh.** If you refresh the browser during a run, the SSE stream drops; the worker keeps going on the server but the new tab can't reconstruct progress. Banner in the UI says don't refresh during a run.
 - **No resumable downloads.** Browser drop = click Download again.
-- **60-min idle TTL.** Walk away for an hour, come back, you re-upload.
-- **Resend disabled by default in v1.** The `resend-api-key` credential can be the literal string `disabled`; alerts silently no-op until you replace it with a real Resend API key + restart.
+- **60-min idle TTL.** Walk away for an hour with no activity, come back, you re-upload. (An open SSE stream keeps the session alive, so an idle run is fine.)
+- **Resend in placeholder mode.** If the `resend-api-key` credential file contains the literal string `disabled` (or the `RESEND_API_KEY_FILE` env is unset), `secrets.get_resend_key()` returns `None` and all alert methods no-op. Replace the credential and `systemctl restart cleaners-hub` to enable.
+- **Sandbox sender.** Until a domain is verified at resend.com/domains, alerts send from `onboarding@resend.dev` and can only be delivered to the Resend account-owner email. Verify a maxcommandcenter.com subdomain to lift this — three DNS records, one constant in `alerts.py`.
 
 ---
 

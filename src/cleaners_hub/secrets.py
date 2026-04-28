@@ -39,11 +39,20 @@ def get_xai_key() -> str:
 
 
 def get_resend_key() -> str | None:
-    """Return the Resend API key, or None if not configured (alerts disabled)."""
+    """Return the Resend API key, or None if not configured (alerts disabled).
+
+    The literal placeholder string ``disabled`` is treated as "no key" so
+    operators can plant a placeholder credential file (matching the
+    install-vps.sh prereq check) without accidentally trying to send
+    email through it. README documents this contract.
+    """
     try:
-        return _read_credential_file("RESEND_API_KEY_FILE")
+        v = _read_credential_file("RESEND_API_KEY_FILE")
     except RuntimeError:
         return None
+    if v.strip().lower() == "disabled":
+        return None
+    return v
 
 
 def get_key(provider: str) -> str | None:

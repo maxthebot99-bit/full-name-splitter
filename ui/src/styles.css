@@ -61,3 +61,16 @@ body {
 
 button { font-family: inherit; }
 input, select { font-family: inherit; }
+
+/* Keyboard focus ring — applies to anything tab-navigated (mapper cards,
+   dry-run tabs, ▶ buttons, modal dismiss). :focus-visible only fires for
+   keyboard focus, not mouse, so click-to-select doesn't get a ring. */
+:focus-visible {
+  outline: 2px solid #c7b3ff;
+  outline-offset: 2px;
+}
+button:focus:not(:focus-visible),
+[role="button"]:focus:not(:focus-visible),
+[role="tab"]:focus:not(:focus-visible) {
+  outline: none;
+}

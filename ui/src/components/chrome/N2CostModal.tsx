@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { N2, fSerif, fBody, fMono } from '../../theme';
 import { useStore } from '../../store';
 import { confirmCostModal, cancelCostModal } from '../../lib/actions';
@@ -6,6 +7,19 @@ import { confirmCostModal, cancelCostModal } from '../../lib/actions';
 // populated. Confirm routes the pending args to startRun; Cancel clears.
 export function N2CostModal() {
   const modal = useStore((s) => s[s.active].costModal);
+
+  // Escape closes the modal — standard ARIA dialog behavior. Hook is
+  // declared at the top level (before the early return) so React's rules
+  // of hooks aren't violated when the modal mounts and unmounts.
+  useEffect(() => {
+    if (!modal) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') cancelCostModal();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [modal]);
+
   if (!modal) return null;
 
   const { rows, costUsd, elapsedSeconds, column } = modal;

@@ -56,6 +56,16 @@ for f in /etc/credstore.encrypted/xai-api-key \
         echo "[install] ERROR: missing credential $f. See deploy/install-vps.sh prereqs."
         exit 1
     fi
+    # Verify the encrypted blob actually decrypts. systemd-creds errors
+    # late-and-cryptic if a credstore file is corrupted or the host-key
+    # binding broke (e.g. after a reinstall). Better to fail here with a
+    # clear pointer than to have the unit fail to start with a less-
+    # readable error 30 seconds later.
+    if ! systemd-creds decrypt --name="$(basename "$f")" "$f" /dev/null 2>/dev/null; then
+        echo "[install] ERROR: $f exists but doesn't decrypt — re-plant it."
+        echo "         (sudo systemd-creds encrypt --name=$(basename "$f") - $f)"
+        exit 1
+    fi
 done
 
 if ! command -v rsync >/dev/null 2>&1; then
@@ -181,11 +191,17 @@ DNS_COUNT=$(echo "$DNS_CHECK" | python3 -c "import sys,json; print(len(json.load
 
 if [[ "$DNS_COUNT" -lt 1 ]]; then
     echo "[install] creating DNS CNAME ${HOSTNAME_FQDN} → tunnel ..."
+    # Build the JSON payload via python -c so a SUBDOMAIN or TUNNEL_ID
+    # that contained a quote / backslash can't break the body. (Currently
+    # both are derived from local config, so this is defense-in-depth
+    # rather than a known vector.)
+    DNS_BODY=$(python3 -c "import json,sys;print(json.dumps({'type':'CNAME','name':sys.argv[1],'content':sys.argv[2]+'.cfargotunnel.com','proxied':True,'ttl':1}))" "$SUBDOMAIN" "$TUNNEL_ID")
     curl -s -o /dev/null -X POST \
         "https://api.cloudflare.com/client/v4/zones/${CF_ZONE}/dns_records" \
         -H "Authorization: Bearer ${CF_TOKEN}" \
         -H "Content-Type: application/json" \
-        --data "{\"type\":\"CNAME\",\"name\":\"${SUBDOMAIN}\",\"content\":\"${TUNNEL_ID}.cfargotunnel.com\",\"proxied\":true,\"ttl\":1}"
+        --data "$DNS_BODY"
+    unset DNS_BODY
 else
     echo "[install] DNS CNAME already exists."
 fi

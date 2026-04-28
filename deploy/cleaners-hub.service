@@ -34,6 +34,14 @@ Environment=RESEND_API_KEY_FILE=%d/resend-api-key
 ExecStart=/var/www/dashboard/apps/cleaners-hub/deploy/start.sh
 Restart=on-failure
 RestartSec=10
+# Stop deadline: SIGTERM, then SIGKILL after this. uvicorn waits for
+# in-flight requests to drain, but a long Grok call can hold the worker
+# past systemd's default 90s. Shorter window keeps install-vps.sh
+# restarts predictable; the run worker's SIGKILL just leaves
+# session.contexts as it was on the last batch_cb (persisted to memory),
+# which "Continue cleaning" then resumes from cleanly.
+TimeoutStopSec=20
+KillSignal=SIGTERM
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=cleaners-hub

@@ -18,7 +18,10 @@ dependencies = [
     "pyarrow>=16.0",
     "openpyxl>=3.1",
     "ftfy>=6.2",
-    "Unidecode>=1.3",
+    # Unidecode was declared but never imported — and it's GPL-2.0+, which
+    # would attach combined-work obligations if cleaners-hub ever moved
+    # toward distribution. Dropped 2026-04-28; re-add with a license check
+    # if a real need shows up.
     "charset-normalizer>=3.3",
     "regex>=2024.5.15",
     "httpx>=0.27",
