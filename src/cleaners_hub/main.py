@@ -777,6 +777,24 @@ async def get_settings(request: Request) -> dict:
     }
 
 
+@app.post("/api/admin/test-alert")
+@limiter.limit("5/minute")
+async def test_alert(request: Request) -> dict:
+    """Admin-only: send a one-off test email through the Resend wiring.
+
+    Useful for verifying the API key + sandbox sender after planting a new
+    Resend credential. Bypasses the per-day dedup, so it always fires.
+    """
+    email = _email_from_request(request)
+    if not _is_admin(email):
+        raise HTTPException(403, "admin only")
+    sent, err = alerter().test_ping(triggered_by=email)
+    audit("test_alert", email=email, sent=sent, error=err)
+    if not sent:
+        return {"sent": False, "error": err}
+    return {"sent": True}
+
+
 @app.put("/api/settings")
 @limiter.limit("10/minute")
 async def put_settings(request: Request, body: SettingsPatch) -> dict:

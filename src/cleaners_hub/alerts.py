@@ -168,6 +168,36 @@ class AlertSender:
             ),
         )
 
+    def test_ping(self, *, triggered_by: str) -> tuple[bool, str | None]:
+        """Send an explicit test email — used by the admin Settings UI to
+        verify Resend is wired up end-to-end. Returns (sent, error_or_None).
+        Bypasses the bucket dedup so it always fires."""
+        client = self._resend_client()
+        if client is None:
+            return False, "Resend client not initialized (key missing or invalid)"
+        try:
+            client.Emails.send(
+                {
+                    "from": ALERT_FROM,
+                    "to": [ALERT_TO],
+                    "subject": "[cleaners-hub] test ping",
+                    "text": (
+                        f"Triggered by: {triggered_by}\n"
+                        f"App: cleaners.maxcommandcenter.com\n"
+                        f"Sender: {ALERT_FROM} (Resend sandbox)\n"
+                        f"Recipient: {ALERT_TO}\n\n"
+                        "If you got this, the Resend wiring is working end-to-end."
+                    ),
+                }
+            )
+            _log.info("alert_test_sent",
+                      extra={"action": "alert_test_sent",
+                             "triggered_by": triggered_by})
+            return True, None
+        except Exception as e:
+            _log.warning("alert_test_failed: %r", e)
+            return False, f"{type(e).__name__}: {e}"
+
     def xai_5xx_persistent(self, *, error_count: int, window_min: int) -> None:
         now = time.time()
         if now - self._xai_5xx_last_alert_ts < XAI_5XX_COOLDOWN_S:

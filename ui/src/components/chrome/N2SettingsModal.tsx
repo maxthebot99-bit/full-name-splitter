@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { N2, fSerif, fBody, fMono } from '../../theme';
 import { useStore } from '../../store';
 import { refreshSettings, saveSettings } from '../../lib/actions';
+import { sendTestAlert } from '../../api';
 import type { AppSettingsPatch } from '../../types';
 
 // Admin-only settings modal. Reads /api/settings on open and PUTs a patch
@@ -15,14 +16,35 @@ export function N2SettingsModal() {
   const [draft, setDraft] = useState<AppSettingsPatch>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [testStatus, setTestStatus] = useState<'idle' | 'sending' | 'sent' | 'failed'>('idle');
+  const [testError, setTestError] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) {
       void refreshSettings();
       setDraft({});
       setError(null);
+      setTestStatus('idle');
+      setTestError(null);
     }
   }, [open]);
+
+  const onSendTest = async () => {
+    setTestStatus('sending');
+    setTestError(null);
+    try {
+      const r = await sendTestAlert();
+      if (r.sent) {
+        setTestStatus('sent');
+      } else {
+        setTestStatus('failed');
+        setTestError(r.error ?? 'unknown error');
+      }
+    } catch (err) {
+      setTestStatus('failed');
+      setTestError(err instanceof Error ? err.message : 'request failed');
+    }
+  };
 
   if (!open || !settings) return null;
 
@@ -202,6 +224,95 @@ export function N2SettingsModal() {
             }}
           >
             {error}
+          </div>
+        )}
+
+        {/* Email alerts test — fires a one-off through the live Resend
+            wiring (sender + recipient as configured in alerts.py). Useful
+            after planting / rotating the Resend key. */}
+        {isAdmin && (
+          <div
+            style={{
+              marginTop: 22,
+              paddingTop: 18,
+              borderTop: `1px solid ${N2.hair}`,
+            }}
+          >
+            <div
+              style={{
+                fontFamily: fMono,
+                fontSize: 9.5,
+                color: N2.text3,
+                letterSpacing: 1.4,
+                textTransform: 'uppercase',
+                fontWeight: 600,
+                marginBottom: 6,
+              }}
+            >
+              Email alerts
+            </div>
+            <div
+              style={{
+                fontSize: 12,
+                color: N2.text2,
+                lineHeight: 1.5,
+                marginBottom: 10,
+              }}
+            >
+              Test the Resend wiring end-to-end. Sends one email from{' '}
+              <code style={{ fontFamily: fMono, color: N2.text3 }}>
+                onboarding@resend.dev
+              </code>{' '}
+              to the configured recipient.
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <button
+                type="button"
+                onClick={onSendTest}
+                disabled={testStatus === 'sending'}
+                style={{
+                  background: 'transparent',
+                  color: N2.accent,
+                  border: `1px solid ${N2.accentDeep}`,
+                  padding: '8px 14px',
+                  borderRadius: 2,
+                  fontFamily: fMono,
+                  fontSize: 10,
+                  letterSpacing: 1.5,
+                  textTransform: 'uppercase',
+                  fontWeight: 700,
+                  cursor: testStatus === 'sending' ? 'wait' : 'pointer',
+                  opacity: testStatus === 'sending' ? 0.6 : 1,
+                }}
+              >
+                {testStatus === 'sending' ? 'Sending…' : 'Send test email'}
+              </button>
+              {testStatus === 'sent' && (
+                <span
+                  style={{
+                    fontFamily: fMono,
+                    fontSize: 10,
+                    color: N2.sage,
+                    letterSpacing: 1.2,
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  ✓ Sent — check your inbox (and spam)
+                </span>
+              )}
+              {testStatus === 'failed' && (
+                <span
+                  style={{
+                    fontFamily: fMono,
+                    fontSize: 10,
+                    color: N2.rose,
+                    letterSpacing: 0.8,
+                  }}
+                >
+                  Failed: {testError}
+                </span>
+              )}
+            </div>
           </div>
         )}
 

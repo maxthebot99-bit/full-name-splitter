@@ -201,6 +201,14 @@ export async function putSettings(patch: AppSettingsPatch): Promise<AppSettings>
   return jsonOrThrow(r) as Promise<AppSettings>;
 }
 
+export async function sendTestAlert(): Promise<{ sent: boolean; error?: string }> {
+  const r = await fetch('/api/admin/test-alert', {
+    method: 'POST',
+    headers: HEADERS_JSON,
+  });
+  return jsonOrThrow(r) as Promise<{ sent: boolean; error?: string }>;
+}
+
 // ─── SSE ────────────────────────────────────────────────────────────────
 
 // EventSource for streaming progress. The caller handles routing the events
