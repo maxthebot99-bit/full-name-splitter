@@ -31,10 +31,24 @@ export function N2Sidebar({ view }: { view: AppState }) {
   const mapperSelected = slice.mapperSelectedColumn;
   const [rowLimit, setRowLimit] = useState<number>(0);
 
-  const effectiveRows = rowLimit > 0 && file ? Math.min(rowLimit, file.rows) : file?.rows ?? 0;
+  // Partial-cleaning state: any rows have a non-pending status, but not
+  // all of them. The CTA relabels to "Continue cleaning" and its cost
+  // estimate covers only the rows that are still pending.
+  const totalRows = file?.rows ?? 0;
+  const cleanedCount = slice.rows.filter((r) => r.status !== 'pending').length;
+  const isPartial = cleanedCount > 0 && cleanedCount < totalRows;
+  const inFlight = slice.rowsInFlight.length > 0;
+  const pendingCount = isPartial
+    ? Math.max(0, totalRows - cleanedCount)
+    : totalRows;
+
+  const effectiveRows = rowLimit > 0 && file
+    ? Math.min(rowLimit, pendingCount)
+    : pendingCount;
   const estSub = file
     ? `${effectiveRows.toLocaleString('en-US')} rows · ~${fmtCost(effectiveRows * 0.00012)} · ~${fmtHm(Math.max(60, effectiveRows / 14))}`
     : 'load a csv to begin';
+  const ctaLabel = isPartial ? 'Continue cleaning' : 'Begin cleaning';
 
   return (
     <aside
@@ -66,7 +80,7 @@ export function N2Sidebar({ view }: { view: AppState }) {
       {view === 'indexed' && (
         <>
           <N2CtaPrimary
-            label="Begin cleaning"
+            label={ctaLabel}
             sub={estSub}
             onClick={() =>
               beginCleaningWithCostCheck(
@@ -120,8 +134,12 @@ export function N2Sidebar({ view }: { view: AppState }) {
         </button>
       )}
 
-      {(view === 'running' || view === 'done') && <N2Progress view={view} />}
-      {(view === 'running' || view === 'done') && <N2Telemetry view={view} />}
+      {(view === 'running' || view === 'done' || inFlight || isPartial) && (
+        <N2Progress view={view} />
+      )}
+      {(view === 'running' || view === 'done' || inFlight || isPartial) && (
+        <N2Telemetry view={view} />
+      )}
     </aside>
   );
 }

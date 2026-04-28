@@ -92,6 +92,88 @@ def _stats_to_telemetry(stats, elapsed: float) -> dict[str, Any]:
     }
 
 
+# ─── partial-cleaning helpers ────────────────────────────────────────────────
+# Per-row ▶ and manual override need to work BEFORE a full run has been kicked
+# off. The full-run worker can then skip rows that ▶ already cleaned. Both
+# paths share session.contexts as a sparse list of length total_rows where
+# slot i is None for "not yet cleaned" and a Context for "done".
+
+def _ensure_partial_state(session: Session, column: str) -> bool:
+    """Make sure session.source_df + session.contexts are ready for partial
+    cleaning. Returns False if the file can't be read.
+
+    Idempotent — once initialized, subsequent calls are cheap. The full-run
+    worker calls this too so its skip-already-cleaned logic always sees a
+    sized contexts list.
+    """
+    if session.upload_path is None:
+        return False
+    meta = getattr(session, "_file_meta_obj", None)
+    if meta is None:
+        return False
+
+    if session.source_df is None:
+        try:
+            io_reader = importlib.import_module(
+                f"cleaners_hub.cleaners.{session.kind}.io.reader"
+            )
+            parts = list(io_reader.read_chunks(meta, column, chunk_rows=10_000))
+            session.source_df = (
+                pd.concat(parts, ignore_index=True) if parts
+                else pd.DataFrame(columns=meta.columns)
+            )
+        except Exception as e:
+            _log.warning("source_df lazy load failed: %r", e)
+            return False
+
+    total = len(session.source_df)
+    if not session.contexts:
+        session.contexts = [None] * total
+    elif len(session.contexts) < total:
+        session.contexts.extend([None] * (total - len(session.contexts)))
+
+    if session.selected_column is None:
+        session.selected_column = column
+    return True
+
+
+def _passthrough_context(kind: str, original: str):
+    """Build a Context that represents a row we didn't clean (row_limit cut
+    us off, or skipped via partial cleaning). The export CSV needs *some*
+    Context object per row; this one keeps ``current == original`` and
+    flags ``route="pending"`` so it's clearly distinguishable from a real
+    Grok answer.
+    """
+    types_mod = importlib.import_module(f"cleaners_hub.cleaners.{kind}.types")
+    Ctx = types_mod.NameContext  # both kinds use NameContext
+    return Ctx(
+        original=original,
+        current=original,
+        flags={"NOT_PROCESSED"},
+        is_null=False,
+        llm_response=None,
+        llm_reason="",
+    )
+
+
+def _row_payload(n: int, ctx: Any | None, *, orig: str = "",
+                 clean: str | None = None, status: str = "pending",
+                 reason: str = "") -> dict[str, Any]:
+    """Build the SSE/HTTP row payload either from a Context (preferred when
+    present) or from raw fields (used for pre-run override / pending rows)."""
+    if ctx is not None:
+        return _ctx_to_row(n, ctx)
+    return {
+        "n": n,
+        "orig": orig,
+        "clean": clean,
+        "status": status,
+        "reason": reason,
+        "flags": [],
+        "route": None,
+    }
+
+
 def run_worker(
     session: Session,
     *,
@@ -186,12 +268,22 @@ def run_worker(
         return
 
     start = time.monotonic()
-    all_contexts: list = []
     accumulated_dfs: list[pd.DataFrame] = []
     rows_seen = 0
     spend_was_blocked = False
     final_stats = None
     cumulative_cost: float = 0.0  # provider running_cost across chunks
+    skipped_already_done = 0  # rows we didn't Grok because ▶ pre-cleaned them
+
+    # Pre-allocate session.contexts to total_rows so the run can skip rows
+    # that ▶ or apply_override already filled. If contexts is already the
+    # right size (from prior partial cleaning) the call is a no-op.
+    if not _ensure_partial_state(session, column):
+        session.state = "error"
+        session.error_msg = "Could not pre-load source for partial cleaning"
+        pusher.push("error", {"code": 500, "message": session.error_msg})
+        pusher.push("state", "error")
+        return
 
     def _cancel_cb() -> bool:
         nonlocal spend_was_blocked
@@ -221,21 +313,43 @@ def run_worker(
                     f"Column {column!r} disappeared from chunk {chunk_idx}"
                 )
 
-            # Build (idx, raw) pairs honoring row_limit
+            # Build (idx, raw) pairs honoring row_limit. Skip rows that
+            # already have a context — those were cleaned by a prior ▶
+            # click and don't need to round-trip through Grok again.
             chunk_rows: list[tuple[int, str]] = []
+            chunk_local_count = 0  # rows from this chunk we keep in source_df
             for local_i, val in enumerate(df_chunk[column].astype(str).tolist()):
                 if row_limit is not None and rows_seen >= row_limit:
                     break
                 global_idx = rows_seen
-                chunk_rows.append((global_idx, val))
+                if (
+                    global_idx < len(session.contexts)
+                    and session.contexts[global_idx] is not None
+                ):
+                    skipped_already_done += 1
+                else:
+                    chunk_rows.append((global_idx, val))
+                chunk_local_count += 1
                 rows_seen += 1
 
-            # Trim the source df to match in case row_limit cut us off
-            df_used = df_chunk.iloc[: len(chunk_rows)].copy()
+            # Keep the full chunk in accumulated_dfs (skipped rows still
+            # need to appear in the export DataFrame, just with their
+            # already-cleaned context).
+            df_used = df_chunk.iloc[:chunk_local_count].copy()
             accumulated_dfs.append(df_used)
 
+            if not chunk_rows:
+                # Whole chunk was already cleaned — nothing for Grok.
+                continue
+
             def _batch_cb(done_items, stats):
-                rows_payload = [_ctx_to_row(n + 1, ctx) for n, ctx in done_items]
+                # Mirror results into session.contexts as we go so a mid-run
+                # cancel still leaves usable partial state.
+                rows_payload = []
+                for idx, ctx in done_items:
+                    if 0 <= idx < len(session.contexts):
+                        session.contexts[idx] = ctx
+                    rows_payload.append(_ctx_to_row(idx + 1, ctx))
                 pusher.push("rows", rows_payload)
                 pusher.push("telemetry", _stats_to_telemetry(stats, time.monotonic() - start))
 
@@ -246,7 +360,11 @@ def run_worker(
                 cancel_cb=_cancel_cb,
                 batch_cb=_batch_cb,
             )
-            all_contexts.extend(chunk_contexts)
+            # Belt-and-suspenders write in case route_rows finished a row
+            # without firing batch_cb.
+            for (gidx, _), ctx in zip(chunk_rows, chunk_contexts):
+                if 0 <= gidx < len(session.contexts):
+                    session.contexts[gidx] = ctx
             final_stats = chunk_stats
 
             # Commit this chunk's actual spend to the SQLite tracker
@@ -276,14 +394,20 @@ def run_worker(
 
         # ---- terminal state ----
 
+        # session.contexts is the canonical list at this point; cleaned rows
+        # have a Context, the rest are still None. Counts/exports work off
+        # the populated entries.
+        cleaned_count = sum(1 for c in session.contexts if c is not None)
+
         if session.cancel_flag.is_set():
             session.state = "cancelled"
             audit("run_cancelled", email=email, session_id=sid, kind=kind,
-                  rows_processed=len(all_contexts))
+                  rows_processed=cleaned_count,
+                  skipped_already_done=skipped_already_done)
             try:
                 history().record_finish(
                     run_id=sid, state="cancelled",
-                    row_count=len(all_contexts),
+                    row_count=cleaned_count,
                     cost_usd=cumulative_cost,
                 )
             except Exception:
@@ -310,7 +434,7 @@ def run_worker(
             try:
                 history().record_finish(
                     run_id=sid, state="spend_blocked",
-                    row_count=len(all_contexts),
+                    row_count=cleaned_count,
                     cost_usd=cumulative_cost,
                 )
             except Exception:
@@ -326,18 +450,36 @@ def run_worker(
         else:
             source_df = pd.DataFrame(columns=meta.columns)
 
-        # Stash on session for editable-cell rebuilds + per-row rerun.
+        # Stash source_df on session for editable-cell rebuilds. contexts
+        # was already updated row-by-row via _batch_cb.
         session.source_df = source_df
-        session.contexts = all_contexts
+
+        # If row_limit was set, contexts past that index might still be
+        # None — pad with synthetic "skipped" contexts so build_export_df
+        # produces a clean output instead of crashing on Nones.
+        any_unfilled = any(c is None for c in session.contexts)
+        contexts_for_export: list = list(session.contexts)
+        if any_unfilled:
+            # Read-through: unfilled rows export as their original value.
+            for i, c in enumerate(contexts_for_export):
+                if c is not None:
+                    continue
+                if i < len(source_df):
+                    raw = source_df[column].iloc[i] if column in source_df.columns else ""
+                    orig_val = str(raw or "").strip()
+                else:
+                    orig_val = ""
+                contexts_for_export[i] = _passthrough_context(kind, orig_val)
 
         export_df = io_writer.build_export_df(
-            source_df, column, all_contexts, overrides=session.overrides or None
+            source_df, column, contexts_for_export,
+            overrides=session.overrides or None,
         )
         out_path = session.output_path
         out_path.parent.mkdir(parents=True, exist_ok=True)
         io_writer.write_csv(export_df, out_path)
         session.result_csv_path = out_path
-        session.result_row_count = len(all_contexts)
+        session.result_row_count = cleaned_count
         if final_stats is not None:
             session.result_cost_usd = float(final_stats.actual_cost)
             session.result_prompt_tokens = int(final_stats.prompt_tokens)
@@ -487,11 +629,24 @@ def rerun_one_row(
     *,
     n: int,
     spend: SpendTracker,
+    column: str | None = None,
 ) -> dict[str, Any] | None:
-    """Re-Grok a single row by 1-based index ``n``. Updates session.contexts
-    in place, regenerates the output CSV, returns the new Row payload."""
-    if not session.contexts or n < 1 or n > len(session.contexts):
+    """Re-Grok a single row by 1-based index ``n``.
+
+    Works pre-run (no full cleaning has happened yet) by lazy-loading the
+    source DataFrame and pre-allocating session.contexts as a sparse list.
+    Updates session.contexts[n-1] in place. The output CSV is only
+    regenerated once the whole run is done — partial-state CSVs would mix
+    cleaned and raw values in confusing ways.
+    """
+    target_col = session.selected_column or column
+    if target_col is None:
         return None
+    if not _ensure_partial_state(session, target_col):
+        return None
+    if n < 1 or n > len(session.contexts):
+        return None
+
     pipeline, _io_reader, io_writer, _types_mod, XAIProvider, _errors, config = \
         _modules_for(session.kind)
 
@@ -500,10 +655,21 @@ def rerun_one_row(
     settings_obj.batch_size = _app.batch_size_for(session.kind)
     settings_obj.model = {"xai": _app.model_for(session.kind)}
 
-    ctx = session.contexts[n - 1]
+    existing = session.contexts[n - 1]
+    if existing is not None:
+        original = existing.original
+    else:
+        # Pull the raw value from the cached source DataFrame.
+        try:
+            raw = session.source_df[target_col].iloc[n - 1]
+            original = str(raw or "").strip()
+        except Exception as e:
+            _log.warning("rerun row read from source_df failed: %r", e)
+            return None
+
     provider = XAIProvider()
     new_contexts, stats = pipeline.route_rows(
-        [(0, ctx.original)], settings_obj, provider
+        [(0, original)], settings_obj, provider
     )
     new_ctx = new_contexts[0]
     session.contexts[n - 1] = new_ctx
@@ -521,8 +687,10 @@ def rerun_one_row(
     except Exception as e:
         _log.warning("rerun_one_row spend.record failed: %r", e)
 
-    # Rebuild output CSV so the next download reflects the rerun.
-    if session.source_df is not None and session.selected_column:
+    # Rebuild output CSV only when every row has a context. Mid-cleaning
+    # downloads should reflect a "complete" file, not a half-baked one.
+    fully_cleaned = all(c is not None for c in session.contexts)
+    if fully_cleaned and session.source_df is not None and session.selected_column:
         try:
             export_df = io_writer.build_export_df(
                 session.source_df, session.selected_column,
@@ -533,7 +701,8 @@ def rerun_one_row(
             _log.warning("rerun output rewrite failed: %r", e)
 
     audit("rerun_row", email=session.email, session_id=session.sid,
-          kind=session.kind, row_n=n, cost_usd=float(stats.actual_cost))
+          kind=session.kind, row_n=n, cost_usd=float(stats.actual_cost),
+          pre_run=(existing is None))
 
     # Stream a row_update SSE event so any open browser updates live.
     Pusher(session).push("row_update", _ctx_to_row(n, new_ctx))
@@ -542,20 +711,62 @@ def rerun_one_row(
 
 # ─── manual override (no Grok call) ──────────────────────────────────────────
 
-def apply_override(session: Session, *, n: int, cleaned: str | None) -> dict[str, Any] | None:
+def apply_override(
+    session: Session,
+    *,
+    n: int,
+    cleaned: str | None,
+    column: str | None = None,
+) -> dict[str, Any] | None:
     """Set/clear a manual override for row ``n``. Rewrites output CSV.
 
-    ``cleaned=None`` clears the override, restoring the Grok value.
+    ``cleaned=None`` clears the override (restoring the Grok value, if
+    any). Works pre-run via the same lazy-init path rerun_one_row uses.
     """
-    if not session.contexts or n < 1 or n > len(session.contexts):
+    target_col = session.selected_column or column
+    if target_col is None:
         return None
+    if not _ensure_partial_state(session, target_col):
+        return None
+    if n < 1 or n > len(session.contexts):
+        return None
+
     if cleaned is None:
         session.overrides.pop(n - 1, None)
     else:
         session.overrides[n - 1] = cleaned
 
-    # Rewrite output CSV so the download reflects the override.
-    if session.source_df is not None and session.selected_column:
+    # Build the row payload — prefer an existing Context, else read the
+    # raw value from source_df so the user sees their override against
+    # the original.
+    ctx = session.contexts[n - 1]
+    if ctx is not None:
+        original = ctx.original
+        payload = _ctx_to_row(n, ctx)
+    else:
+        try:
+            raw = session.source_df[target_col].iloc[n - 1]
+            original = str(raw or "").strip()
+        except Exception as e:
+            _log.warning("override read from source_df failed: %r", e)
+            return None
+        payload = _row_payload(n, None, orig=original, clean=None,
+                               status="pending", reason="")
+
+    if cleaned is not None:
+        payload["clean"] = cleaned
+        payload["status"] = "changed" if cleaned != original else "unchanged"
+        payload["reason"] = "manual override"
+    elif ctx is None:
+        # Override cleared and there's no Grok value either → row is back
+        # to pending.
+        payload["status"] = "pending"
+        payload["clean"] = None
+        payload["reason"] = ""
+
+    # Rebuild output CSV only when every row has a context.
+    fully_cleaned = all(c is not None for c in session.contexts)
+    if fully_cleaned and session.source_df is not None and session.selected_column:
         _pipeline, _io_reader, io_writer, _types_mod, _XAIProvider, _errors, _config = \
             _modules_for(session.kind)
         try:
@@ -568,14 +779,8 @@ def apply_override(session: Session, *, n: int, cleaned: str | None) -> dict[str
             _log.warning("override output rewrite failed: %r", e)
 
     audit("override_row", email=session.email, session_id=session.sid,
-          kind=session.kind, row_n=n, cleared=(cleaned is None))
+          kind=session.kind, row_n=n, cleared=(cleaned is None),
+          pre_run=(ctx is None))
 
-    # Build a new Row payload reflecting the override.
-    ctx = session.contexts[n - 1]
-    payload = _ctx_to_row(n, ctx)
-    if cleaned is not None:
-        payload["clean"] = cleaned
-        payload["status"] = "changed" if cleaned != ctx.original else "unchanged"
-        payload["reason"] = "manual override"
     Pusher(session).push("row_update", payload)
     return payload

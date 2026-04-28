@@ -11,9 +11,17 @@ function fmtHms(s: number): string {
 }
 
 export function N2Progress({ view }: { view: AppState }) {
-  const { processed, total, etaSeconds, elapsedSeconds } = useStore(
-    (s) => s[s.active].progress,
-  );
+  const slice = useStore((s) => s[s.active]);
+  const { etaSeconds, elapsedSeconds } = slice.progress;
+  // For full runs, progress.processed comes from telemetry SSE events.
+  // For partial states (after ▶ but before/between full runs), telemetry
+  // doesn't fire, so derive from the rows[] array directly so the
+  // percentage reflects what's actually cleaned.
+  const total = slice.file?.rows ?? slice.progress.total;
+  const cleanedFromRows = slice.rows.filter((r) => r.status !== 'pending').length;
+  const processed = view === 'running'
+    ? Math.max(slice.progress.processed, cleanedFromRows)
+    : cleanedFromRows;
   const pct = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 0;
   return (
     <div style={{ paddingTop: 14, borderTop: `1px solid ${N2.hair}` }}>

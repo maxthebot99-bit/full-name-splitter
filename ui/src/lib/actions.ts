@@ -307,7 +307,9 @@ export async function rerunRow(n: number, kind?: Kind): Promise<void> {
   const s = useStore.getState();
   const slice = s[target];
   if (!slice.sid) return;
-  // Optimistically flip the row to pending so the user sees feedback.
+  // Mark in-flight so the sidebar shows the clay-style "thinking" strip.
+  s.markRowInFlight(target, n);
+  // Optimistically flip the row to pending so the table reads correctly.
   const existing = slice.rows.find((r) => r.n === n);
   if (existing) {
     s.upsertRow(target, { ...existing, status: 'pending', reason: '' });
@@ -318,6 +320,8 @@ export async function rerunRow(n: number, kind?: Kind): Promise<void> {
   } catch (err) {
     console.error('[rerun-row] failed:', err);
     if (existing) s.upsertRow(target, existing);
+  } finally {
+    s.unmarkRowInFlight(target, n);
   }
 }
 
@@ -330,11 +334,14 @@ export async function overrideRow(
   const s = useStore.getState();
   const slice = s[target];
   if (!slice.sid) return;
+  s.markRowInFlight(target, n);
   try {
     const updated = await httpOverrideRow(slice.sid, n, cleaned);
     s.upsertRow(target, updated);
   } catch (err) {
     console.error('[override] failed:', err);
+  } finally {
+    s.unmarkRowInFlight(target, n);
   }
 }
 

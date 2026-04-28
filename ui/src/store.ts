@@ -64,6 +64,11 @@ export interface KindSlice {
   mapperSelectedColumn?: string;
   // Active SSE subscription, if any.
   eventStream?: EventSource;
+  // Row numbers currently being rerun via ▶ (or override). Drives the
+  // sidebar's clay-style "thinking" strip — when this is non-empty we
+  // visually mirror the running state even though runState is still
+  // 'columns_loaded' / 'done'.
+  rowsInFlight: number[];
 }
 
 interface RootState {
@@ -106,6 +111,8 @@ interface RootActions {
   setCostModal: (k: Kind, m?: CostModalState) => void;
   setMapperSelectedColumn: (k: Kind, col?: string) => void;
   setEventStream: (k: Kind, es?: EventSource) => void;
+  markRowInFlight: (k: Kind, n: number) => void;
+  unmarkRowInFlight: (k: Kind, n: number) => void;
 }
 
 type Store = RootState & RootActions;
@@ -120,6 +127,7 @@ function freshSlice(kind: Kind): KindSlice {
     filter: 'all',
     dryRunFilter: 'all',
     dryRunLoading: false,
+    rowsInFlight: [],
   };
 }
 
@@ -229,6 +237,17 @@ export const useStore = create<Store>((set, get) => {
     setCostModal: (k, m) => update(k, { costModal: m }),
     setMapperSelectedColumn: (k, col) => update(k, { mapperSelectedColumn: col }),
     setEventStream: (k, es) => update(k, { eventStream: es }),
+    markRowInFlight: (k, n) => {
+      const cur = get()[k];
+      if (cur.rowsInFlight.includes(n)) return;
+      update(k, { rowsInFlight: [...cur.rowsInFlight, n] });
+    },
+    unmarkRowInFlight: (k, n) => {
+      const cur = get()[k];
+      const next = cur.rowsInFlight.filter((x) => x !== n);
+      if (next.length === cur.rowsInFlight.length) return;
+      update(k, { rowsInFlight: next });
+    },
   };
 });
 

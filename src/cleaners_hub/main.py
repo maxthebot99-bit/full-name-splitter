@@ -598,6 +598,9 @@ async def preview(
         for i, v in enumerate(vals)
     ]
     nonempty = sum(1 for r in rows if r["orig"])
+    # Stash the user's column choice on the session so per-row ▶ / override
+    # clicks (which can fire before the full run) know which column to read.
+    sess.selected_column = target_col
     audit("preview", email=_email_from_request(request), session_id=sid,
           kind=sess.kind, column=target_col, count=len(rows),
           nonempty=nonempty)
