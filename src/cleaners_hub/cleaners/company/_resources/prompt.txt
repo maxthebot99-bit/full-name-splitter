@@ -10,7 +10,7 @@ Clean the raw company name from {{companyName}} and return only the cleaned comp
 #INSTRUCTIONS#
 Apply the following rules in order to the value from {{companyName}}:
 
-1) **Remove legal entity designators — TRAILING ONLY.** Strip trailing forms like LLC, L.L.C., Inc, Inc., Incorporated, Corp, Corp., Corporation, Co, Co., Company, Ltd, Ltd., Limited, LLP, LLLP, PLC, PC, P.C., LP, GmbH, AG, S.A., S.L., Pty, Pty Ltd, B.V., N.V., and similar variants. These are the ONLY trailing words you remove. (DBA is NOT trailing — see Rule 2.)
+1) **Remove legal entity designators — TRAILING ONLY.** Strip these trailing forms (and only these): LLC, L.L.C., Inc, Inc., Incorporated, Corp, Corp., Corporation, **Co, Co., Company**, Ltd, Ltd., Limited, LLP, LLLP, PLC, PC, P.C., LP, GmbH, AG, S.A., S.L., Pty, Pty Ltd, B.V., N.V., and direct variants. **"Company" is a legal designator — strip it.** "FEMA Company" → "FEMA"; "Momentum Company" → "Momentum"; "Workday Group Company" → "Workday Group" (Group stays per Rule 5; Company goes). DBA is NOT trailing — see Rule 2.
 
    **Critical:** This applies ONLY to formal legal designators at the END of the name. Descriptive suffixes like "Holdings", "Group", "International", "Services", "Solutions", "Industries", "Systems", "Partners", etc. are PART of the company name — see Rule 5. Do NOT interpret single-letter-plus-period patterns elsewhere (e.g., middle initials like "Dora L. International", "John Q. Public Industries") as legal abbreviations. Preserve them.
 
@@ -22,17 +22,25 @@ Apply the following rules in order to the value from {{companyName}}:
    - Remove emojis and unusual special characters, except apostrophes ('), hyphens (-), periods (.) when used in middle initials, and ampersands (&) when integral to the brand.
    - Remove excess or stray punctuation.
 
-3) **Normalize capitalization — PRESERVE-FIRST for ALL CAPS.**
-   - Apply proper case by default for mixed-case or lowercase input ("abc logistics" → "ABC Logistics").
-   - Preserve obvious brand stylizations (eBay, iHeart, McDonald's, iPipeline, IBM).
-   - **ALL CAPS input handling:**
-     - **Short acronyms (2-6 letters, all caps, single word):** PRESERVE as-is. Examples that should pass through unchanged: TSF, GCA, ESE, ARC, IBM, NASA, ABC, COMANCO, STONS, HELLER, JUICE, PROSEED. These are nearly always company acronyms or stylized brand names in a CRM context. Even if a string LOOKS like a common word (e.g., "JUICE", "ARC"), treat it as a brand and preserve it.
-     - **Multi-word ALL CAPS that contains a likely acronym** (e.g., "ABC LOGISTICS", "DEF CORPORATION"): proper-case the descriptive words but preserve the acronym ("ABC Logistics", "DEF Corporation" → after rule 1: "DEF").
-     - **Long ALL CAPS phrases that are clearly shouted common-word names** (e.g., "GREENLIGHT FINANCIAL"): apply proper case ("Greenlight Financial").
-     - When in doubt about ALL CAPS, PRESERVE. Do not return null just because input is all caps.
-   - Keep apostrophes and ampersands when integral.
+3) **Normalize capitalization.** Apply these checks in priority order — first match wins:
 
-4) Convert non-English characters to closest English equivalents (ASCII transliteration). Example: ç→c, é→e, ñ→n, ü→u.
+   **(a) KNOWN BRAND STYLIZATION OVERRIDES EVERYTHING.** If the input (in any casing) is a recognizable brand with a canonical stylization, output that stylization. This rule fires BEFORE the preserve-acronym rule. Examples: `MICROSOFT`/`microsoft` → `Microsoft`; `SERVICENOW` → `ServiceNow`; `BURGER KING` → `Burger King`; `MCDONALD'S` → `McDonald's`; `META` → `Meta`; `IHEART` → `iHeart`; `IPIPELINE` → `iPipeline`; `EBAY` → `eBay`; `LEXCORP` → `LexCorp`; `MARQETA` → `Marqeta`; `HUBSPOT` → `HubSpot`; `SALESFORCE` → `Salesforce`. When uncertain whether something is a known brand, prefer applying canonical case if the input is a single word ≥7 letters or a multi-word phrase.
+
+   **(b) Short acronyms (2-6 letters, all caps, single word):** PRESERVE as-is. Examples passing through unchanged: TSF, GCA, ESE, ARC, IBM, NASA, ABC, BBQ, AAA, MIT, UCLA, USPS, FEMA, DOJ, COMANCO, STONS, HELLER, JUICE, PROSEED. Even if the string looks like a common word ("JUICE", "ARC"), treat it as a brand acronym in this CRM context.
+
+   **(c) Long single-word ALL CAPS (7+ letters) that's a recognizable common dictionary word and not a brand stylization:** apply proper case. Examples: `FIELDSTONE` → `Fieldstone`; `SILVERSTONE` → `Silverstone`; `COMPASS` → `Compass`; `LIBERTY` → `Liberty`; `CATALYST` → `Catalyst`; `MOMENTUM` → `Momentum`; `TRAJECTORY` → `Trajectory`. (If you're not sure whether a 7+ letter ALL CAPS word is a brand stylization, default to proper-case — the user can fix the casing manually if it was actually a stylized brand.)
+
+   **(d) Multi-word ALL CAPS that contains a likely acronym** (e.g., "ABC LOGISTICS"): proper-case the descriptors but preserve the acronym → "ABC Logistics". "DEF CORPORATION" → after Rule 1: "DEF" alone.
+
+   **(e) Multi-word ALL CAPS that's clearly a shouted common phrase** (e.g., "GREENLIGHT FINANCIAL", "STELLAR DYNAMICS"): apply proper case → "Greenlight Financial", "Stellar Dynamics".
+
+   **(f) Mixed-case or lowercase input:** apply proper case. "abc logistics" → "ABC Logistics"; "google" → "Google"; "northwind traders" → "Northwind Traders".
+
+   **(g) Already-correct mixed-case brand names:** keep as-is. eBay, iHeart, iRobot, McDonald's, Coca-Cola, Procter & Gamble, etc.
+
+   Keep apostrophes and ampersands when integral. When in doubt about ALL CAPS, PRESERVE rather than null — but DO normalize to canonical brand stylization when (a) applies.
+
+4) **MANDATORY ASCII transliteration of non-English characters.** This rule applies to EVERY output, every time, regardless of any other rule. Convert: ç→c, é→e, è→e, ê→e, ë→e, á→a, à→a, â→a, ä→a, ñ→n, ó→o, ò→o, ô→o, ö→o, í→i, ì→i, î→i, ï→i, ú→u, ù→u, û→u, ü→u, ý→y, ÿ→y, ß→ss, æ→ae, œ→oe, ø→o, å→a. Capital variants follow the same mapping (É→E, etc.). Examples: "El Niño Foods" → "El Nino Foods" (every time, not occasionally); "L'Oréal" → "L'Oreal"; "Müller Werke" → "Muller Werke"; "Cachaça Seleta" → "Cachaca Seleta"; "Société Générale" → "Societe Generale". This applies BEFORE the output character-set check in Rule 7.
 
 5) **Do NOT strip descriptive words** like "International", "Services", "Solutions", "Group", "Industries", "Systems", "Holdings", "Partners", "Associates", "Technologies", "Enterprises", or similar suffixes — even when they look generic. They are part of the company's name. Only the explicit legal designators in Rule 1 (LLC, Inc, Corp, Ltd, etc.) get stripped. Everything else stays.
 
@@ -114,6 +122,48 @@ Output (cleanedName): Acme
 
 Input (companyName): "Smith Construction Co d/b/a SmithBuilds"
 Output (cleanedName): SmithBuilds
+
+Input (companyName): "FEMA Company"
+Output (cleanedName): FEMA
+
+Input (companyName): "Momentum Company"
+Output (cleanedName): Momentum
+
+Input (companyName): "El Niño Foods Company"
+Output (cleanedName): El Nino Foods
+
+Input (companyName): "MICROSOFT"
+Output (cleanedName): Microsoft
+
+Input (companyName): "SERVICENOW"
+Output (cleanedName): ServiceNow
+
+Input (companyName): "BURGER KING"
+Output (cleanedName): Burger King
+
+Input (companyName): "META"
+Output (cleanedName): Meta
+
+Input (companyName): "MARQETA"
+Output (cleanedName): Marqeta
+
+Input (companyName): "LEXCORP"
+Output (cleanedName): LexCorp
+
+Input (companyName): "FIELDSTONE"
+Output (cleanedName): Fieldstone
+
+Input (companyName): "SILVERSTONE"
+Output (cleanedName): Silverstone
+
+Input (companyName): "COMPASS"
+Output (cleanedName): Compass
+
+Input (companyName): "LIBERTY"
+Output (cleanedName): Liberty
+
+Input (companyName): "L'Oréal."
+Output (cleanedName): L'Oreal
 
 Input (companyName): "GREENLIGHT FINANCIAL LLC"
 Output (cleanedName): Greenlight Financial
