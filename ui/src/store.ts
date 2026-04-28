@@ -1,10 +1,38 @@
-// Zustand store. One slice per kind (company / name) plus shared whoami.
+// Zustand store. One slice per kind (company / name) shaped to mirror the
+// desktop Nocturne store, plus shared whoami / settings / history. SSE
+// events are dispatched into the active slice via `handleSseEvent`.
 
 import { create } from 'zustand';
-import type { ColumnsResponse, DryRunResponse, ErrorPayload, Kind, Row, RunState, Telemetry, UploadResponse, WhoamiResponse } from './types';
+import type {
+  AppSettings,
+  AppState,
+  CostModalState,
+  DryRunUiResult,
+  ErrorPayload,
+  FileMeta,
+  FilterKind,
+  Kind,
+  Progress,
+  Row,
+  RunRecord,
+  RunState,
+  SseEvent,
+  Telemetry,
+  UiError,
+  WhoamiResponse,
+} from './types';
+import { mapDryRunSample } from './lib/mapping';
 
-const EMPTY_TELEMETRY: Telemetry = {
+const initialProgress: Progress = {
+  processed: 0,
+  total: 0,
+  etaSeconds: 0,
+  elapsedSeconds: 0,
+};
+
+const initialTelemetry: Telemetry = {
   rowsPerSecond: 0,
+  rowsPerSecondHistory: [],
   tokensIn: 0,
   tokensOut: 0,
   nullCount: 0,
@@ -14,116 +42,275 @@ const EMPTY_TELEMETRY: Telemetry = {
 
 export interface KindSlice {
   kind: Kind;
-  state: RunState;
-  upload?: UploadResponse;
-  columns?: ColumnsResponse;
-  selectedColumn?: string;
-  rowLimit?: number;
-  dryRun?: DryRunResponse;
-  rows: Row[];
+  // Backend session state, as last seen on SSE / HTTP.
+  runState: RunState;
+  // Session id from the most recent /api/upload for this kind.
+  sid?: string;
+  file?: FileMeta;
+  progress: Progress;
   telemetry: Telemetry;
-  error?: ErrorPayload;
+  rows: Row[];
+  selectedRowIdx?: number;
+  error?: UiError;
   spendBlocked?: { todayUsd: number; capUsd: number };
+  filter: FilterKind;
+  // Dry-run sample overlay — populated while sample results are visible.
+  dryRun?: DryRunUiResult;
+  dryRunFilter: 'all' | 'changed' | 'same' | 'flag' | 'blank';
+  dryRunLoading: boolean;
+  // Cost-ceiling confirm modal (per-kind so the right slice's run starts).
+  costModal?: CostModalState;
+  // Mapper selection — the column the user clicked but hasn't confirmed yet.
+  mapperSelectedColumn?: string;
+  // Active SSE subscription, if any.
   eventStream?: EventSource;
-
-  // mutations
-  reset: () => void;
-  setUpload: (u: UploadResponse) => void;
-  setColumns: (c: ColumnsResponse) => void;
-  setSelectedColumn: (c: string | undefined) => void;
-  setRowLimit: (n: number | undefined) => void;
-  setDryRun: (d: DryRunResponse | undefined) => void;
-  setState: (s: RunState) => void;
-  upsertRows: (rows: Row[]) => void;
-  setTelemetry: (t: Partial<Telemetry>) => void;
-  setError: (e: ErrorPayload | undefined) => void;
-  setSpendBlocked: (b: { todayUsd: number; capUsd: number } | undefined) => void;
-  setEventStream: (es: EventSource | undefined) => void;
 }
 
 interface RootState {
-  whoami?: WhoamiResponse;
-  setWhoami: (w: WhoamiResponse) => void;
   active: Kind;
-  setActive: (k: Kind) => void;
+  whoami?: WhoamiResponse;
+  settings?: AppSettings;
+  // Run-history drawer state — list of runs is fetched on open.
+  history: { open: boolean; loading: boolean; runs: RunRecord[]; total: number };
+  // Settings modal open/closed.
+  settingsModalOpen: boolean;
   company: KindSlice;
   name: KindSlice;
 }
 
-export const useStore = create<RootState>((set, get) => {
-  const initSlice = (kind: Kind): KindSlice => ({
+interface RootActions {
+  setActive: (k: Kind) => void;
+  setWhoami: (w: WhoamiResponse) => void;
+  setSettings: (s: AppSettings) => void;
+  setSettingsModalOpen: (open: boolean) => void;
+  setHistory: (patch: Partial<RootState['history']>) => void;
+  // Slice mutators — k is the target slice; defaults to active when omitted.
+  resetSlice: (k?: Kind) => void;
+  patchSlice: (k: Kind, patch: Partial<KindSlice>) => void;
+  setRunState: (k: Kind, s: RunState) => void;
+  setFile: (k: Kind, f?: FileMeta) => void;
+  setColumn: (k: Kind, col: string) => void;
+  setProgress: (k: Kind, p: Partial<Progress>) => void;
+  setTelemetry: (k: Kind, t: Partial<Telemetry>) => void;
+  appendRows: (k: Kind, rs: Row[]) => void;
+  upsertRow: (k: Kind, r: Row) => void;
+  upsertRows: (k: Kind, rs: Row[]) => void;
+  replaceRows: (k: Kind, rs: Row[]) => void;
+  selectRow: (k: Kind, idx?: number) => void;
+  setUiError: (k: Kind, e?: UiError) => void;
+  setSpendBlocked: (k: Kind, b?: { todayUsd: number; capUsd: number }) => void;
+  setFilter: (k: Kind, f: FilterKind) => void;
+  setDryRun: (k: Kind, d?: DryRunUiResult) => void;
+  setDryRunFilter: (k: Kind, f: KindSlice['dryRunFilter']) => void;
+  setDryRunLoading: (k: Kind, b: boolean) => void;
+  setCostModal: (k: Kind, m?: CostModalState) => void;
+  setMapperSelectedColumn: (k: Kind, col?: string) => void;
+  setEventStream: (k: Kind, es?: EventSource) => void;
+}
+
+type Store = RootState & RootActions;
+
+function freshSlice(kind: Kind): KindSlice {
+  return {
     kind,
-    state: 'idle',
+    runState: 'idle',
+    progress: { ...initialProgress },
+    telemetry: { ...initialTelemetry },
     rows: [],
-    telemetry: { ...EMPTY_TELEMETRY },
-    reset: () => {
-      const cur = get()[kind];
-      cur.eventStream?.close();
-      set((s) => ({
-        ...s,
-        [kind]: {
-          ...initSlice(kind),
-        },
-      }));
-    },
-    setUpload: (u) =>
-      set((s) => ({ ...s, [kind]: { ...s[kind], upload: u, state: 'uploaded' } })),
-    setColumns: (c) =>
-      set((s) => ({
-        ...s,
-        [kind]: {
-          ...s[kind],
-          columns: c,
-          state: 'columns_loaded',
-          selectedColumn: c.suggested ?? s[kind].selectedColumn,
-        },
-      })),
-    setSelectedColumn: (c) =>
-      set((s) => ({ ...s, [kind]: { ...s[kind], selectedColumn: c } })),
-    setRowLimit: (n) =>
-      set((s) => ({ ...s, [kind]: { ...s[kind], rowLimit: n } })),
-    setDryRun: (d) =>
-      set((s) => ({ ...s, [kind]: { ...s[kind], dryRun: d } })),
-    setState: (st) =>
-      set((s) => ({ ...s, [kind]: { ...s[kind], state: st } })),
-    upsertRows: (rows) => {
-      const cur = get()[kind].rows;
-      const idx = new Map<number, number>();
-      cur.forEach((r, i) => idx.set(r.n, i));
-      const next = cur.slice();
-      for (const r of rows) {
-        const i = idx.get(r.n);
-        if (i === undefined) {
-          next.push(r);
-          idx.set(r.n, next.length - 1);
-        } else {
-          next[i] = r;
-        }
-      }
-      next.sort((a, b) => a.n - b.n);
-      set((s) => ({ ...s, [kind]: { ...s[kind], rows: next } }));
-    },
-    setTelemetry: (t) =>
-      set((s) => ({
-        ...s,
-        [kind]: { ...s[kind], telemetry: { ...s[kind].telemetry, ...t } },
-      })),
-    setError: (e) =>
-      set((s) => ({ ...s, [kind]: { ...s[kind], error: e } })),
-    setSpendBlocked: (b) =>
-      set((s) => ({ ...s, [kind]: { ...s[kind], spendBlocked: b } })),
-    setEventStream: (es) =>
-      set((s) => ({ ...s, [kind]: { ...s[kind], eventStream: es } })),
-  });
+    filter: 'all',
+    dryRunFilter: 'all',
+    dryRunLoading: false,
+  };
+}
+
+// Map (runState + slice presence) → Nocturne AppState for view conditionals.
+export function viewState(slice: KindSlice): AppState {
+  if (slice.runState === 'running') return 'running';
+  if (slice.runState === 'done') return 'done';
+  if (
+    slice.runState === 'error' ||
+    slice.runState === 'spend_blocked' ||
+    slice.runState === 'cancelled'
+  ) {
+    return 'error';
+  }
+  if (!slice.sid || !slice.file) return 'empty';
+  if (!slice.file.column) return 'awaiting_column';
+  return 'indexed';
+}
+
+export const useStore = create<Store>((set, get) => {
+  const update = (k: Kind, patch: Partial<KindSlice>) =>
+    set((s) => ({ [k]: { ...s[k], ...patch } }) as Partial<Store>);
+
   return {
     active: 'company',
-    setActive: (k) => set((s) => ({ ...s, active: k })),
-    setWhoami: (w) => set((s) => ({ ...s, whoami: w })),
-    company: initSlice('company'),
-    name: initSlice('name'),
+    history: { open: false, loading: false, runs: [], total: 0 },
+    settingsModalOpen: false,
+    company: freshSlice('company'),
+    name: freshSlice('name'),
+
+    setActive: (k) => set({ active: k }),
+    setWhoami: (w) => set({ whoami: w }),
+    setSettings: (s) => set({ settings: s }),
+    setSettingsModalOpen: (open) => set({ settingsModalOpen: open }),
+    setHistory: (patch) =>
+      set((s) => ({ history: { ...s.history, ...patch } })),
+
+    resetSlice: (k) => {
+      const target = k ?? get().active;
+      const cur = get()[target];
+      cur.eventStream?.close();
+      set({ [target]: freshSlice(target) } as Partial<Store>);
+    },
+    patchSlice: update,
+    setRunState: (k, st) => update(k, { runState: st }),
+    setFile: (k, f) => update(k, { file: f }),
+    setColumn: (k, col) => {
+      const cur = get()[k];
+      if (!cur.file) return;
+      update(k, { file: { ...cur.file, column: col } });
+    },
+    setProgress: (k, p) => {
+      const cur = get()[k];
+      update(k, { progress: { ...cur.progress, ...p } });
+    },
+    setTelemetry: (k, t) => {
+      const cur = get()[k];
+      // Maintain a 60-sample throughput history so the sparkline reflects
+      // real backend telemetry and not a fixture.
+      let history = cur.telemetry.rowsPerSecondHistory;
+      if (typeof t.rowsPerSecond === 'number') {
+        history = [...history, t.rowsPerSecond].slice(-60);
+      }
+      update(k, {
+        telemetry: { ...cur.telemetry, ...t, rowsPerSecondHistory: history },
+      });
+    },
+    appendRows: (k, rs) => {
+      const cur = get()[k];
+      update(k, { rows: [...cur.rows, ...rs] });
+    },
+    upsertRow: (k, r) => {
+      const cur = get()[k];
+      const idx = cur.rows.findIndex((x) => x.n === r.n);
+      if (idx === -1) {
+        update(k, { rows: [...cur.rows, r] });
+        return;
+      }
+      const next = cur.rows.slice();
+      next[idx] = r;
+      update(k, { rows: next });
+    },
+    upsertRows: (k, rs) => {
+      const cur = get()[k];
+      const next = cur.rows.slice();
+      const idxByN = new Map<number, number>();
+      for (let i = 0; i < next.length; i++) idxByN.set(next[i].n, i);
+      for (const r of rs) {
+        const idx = idxByN.get(r.n);
+        if (idx === undefined) {
+          idxByN.set(r.n, next.length);
+          next.push(r);
+        } else {
+          next[idx] = r;
+        }
+      }
+      update(k, { rows: next });
+    },
+    replaceRows: (k, rs) => update(k, { rows: rs }),
+    selectRow: (k, idx) => update(k, { selectedRowIdx: idx }),
+    setUiError: (k, e) => update(k, { error: e }),
+    setSpendBlocked: (k, b) => update(k, { spendBlocked: b }),
+    setFilter: (k, f) => update(k, { filter: f }),
+    setDryRun: (k, d) => update(k, { dryRun: d }),
+    setDryRunFilter: (k, f) => update(k, { dryRunFilter: f }),
+    setDryRunLoading: (k, b) => update(k, { dryRunLoading: b }),
+    setCostModal: (k, m) => update(k, { costModal: m }),
+    setMapperSelectedColumn: (k, col) => update(k, { mapperSelectedColumn: col }),
+    setEventStream: (k, es) => update(k, { eventStream: es }),
   };
 });
 
+// ─── SSE event dispatcher ──────────────────────────────────────────────
+// Backend pushes events with these kinds (see workers.py / streaming.py):
+//   hello | state | rows | row_update | telemetry | error | spend_cap_hit
+// The slice is determined by the sid/kind context the caller passed in.
+
+export function handleSseEvent(kind: Kind, ev: SseEvent): void {
+  const s = useStore.getState();
+  const slice = s[kind];
+  switch (ev.kind) {
+    case 'hello':
+      // {sid} — no-op; we already know the sid.
+      break;
+    case 'state': {
+      const next = ev.payload as RunState;
+      s.setRunState(kind, next);
+      // When the backend says 'done', flip the spend-blocked flag off.
+      if (next === 'done' || next === 'cancelled') {
+        s.setSpendBlocked(kind, undefined);
+      }
+      break;
+    }
+    case 'rows':
+      s.upsertRows(kind, ev.payload as Row[]);
+      break;
+    case 'row_update':
+      s.upsertRow(kind, ev.payload as Row);
+      break;
+    case 'telemetry': {
+      const t = ev.payload as Partial<Telemetry>;
+      s.setTelemetry(kind, t);
+      // Backend telemetry doesn't include processed/total — derive from rows
+      // so the progress bar and big % counter update on every batch.
+      const total = slice.file?.rows ?? 0;
+      const processed = useStore.getState()[kind].rows.filter(
+        (r) => r.status !== 'pending',
+      ).length;
+      const elapsedHint = (t as { elapsed_s?: number }).elapsed_s;
+      s.setProgress(kind, {
+        processed,
+        total,
+        elapsedSeconds:
+          typeof elapsedHint === 'number'
+            ? elapsedHint
+            : slice.progress.elapsedSeconds,
+        etaSeconds:
+          processed > 0 && total > 0 && t.rowsPerSecond
+            ? Math.max(0, (total - processed) / Math.max(0.1, t.rowsPerSecond))
+            : slice.progress.etaSeconds,
+      });
+      break;
+    }
+    case 'error': {
+      const e = ev.payload as ErrorPayload;
+      s.setUiError(kind, {
+        code: e.code,
+        message: e.message,
+        retryAfter: 12, // backend doesn't surface a Retry-After; default
+        lastRow: useStore.getState()[kind].progress.processed + 1,
+      });
+      break;
+    }
+    case 'spend_cap_hit': {
+      const p = ev.payload as { today_usd: number; cap_usd: number };
+      s.setSpendBlocked(kind, { todayUsd: p.today_usd, capUsd: p.cap_usd });
+      break;
+    }
+    default:
+      // Unknown event — log once, ignore.
+      console.warn('[sse] unknown event kind:', ev.kind, ev.payload);
+  }
+}
+
+// Convenience for components that want the active slice as live state.
 export function useSlice(kind: Kind): KindSlice {
   return useStore((s) => s[kind]);
 }
+export function useActiveSlice(): KindSlice {
+  return useStore((s) => s[s.active]);
+}
+
+// Re-export so callers don't have to know about the lib/ split.
+export { mapDryRunSample };
