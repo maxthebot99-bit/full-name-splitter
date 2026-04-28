@@ -548,39 +548,45 @@ async def preview(
 ) -> dict:
     """Return raw column values without running Grok.
 
-    Used by the UI right after column confirmation so the table can show
-    the actual data the user is about to clean. Reads from the same
-    pandas-loaded chunk we already use for /api/columns sampling.
+    Uses the same ``io_reader.read_chunks`` path the run worker uses, so
+    the preview is consistent with what the actual cleaning will see —
+    same encoding/delimiter detection, same malformed-row handling.
     """
     sess = _require_session(sid)
     meta = getattr(sess, "_file_meta_obj", None)
     if meta is None:
         raise HTTPException(409, "must call /api/columns first")
-    if body.column not in meta.columns:
+
+    # Resolve the column case-insensitively and trim whitespace so a
+    # frontend-sent " Company Name " still finds "Company Name".
+    target_col: str | None = None
+    wanted = body.column.strip()
+    wanted_low = wanted.lower()
+    for c in meta.columns:
+        if c == wanted or c.strip() == wanted or c.lower() == wanted_low:
+            target_col = c
+            break
+    if target_col is None:
         raise HTTPException(400, f"unknown column: {body.column!r}")
 
     n = body.count
+    import importlib
+    io_reader = importlib.import_module(f"cleaners_hub.cleaners.{sess.kind}.io.reader")
+
     try:
-        if str(meta.path).lower().endswith(".xlsx"):
-            df = pd.read_excel(
-                meta.path, sheet_name=meta.sheet, dtype=str,
-                nrows=n, keep_default_na=False,
-            )
-        else:
-            df = pd.read_csv(
-                meta.path, encoding=meta.encoding, sep=meta.delimiter,
-                dtype=str, nrows=n, keep_default_na=False, engine="python",
-            )
+        chunks = io_reader.read_chunks(meta, target_col, chunk_rows=max(n, 100))
+        df_chunk = next(iter(chunks), None)
     except Exception as e:
+        _log.warning("preview read_chunks failed: %r", e)
         raise HTTPException(400, f"preview read failed: {type(e).__name__}: {e}") from e
 
-    if body.column not in df.columns:
+    if df_chunk is None or target_col not in df_chunk.columns:
         audit("preview", email=_email_from_request(request), session_id=sid,
-              kind=sess.kind, column=body.column, count=0,
+              kind=sess.kind, column=target_col, count=0,
               note="column missing from chunk")
-        return {"column": body.column, "rows": []}
+        return {"column": target_col, "rows": []}
 
-    vals = df[body.column].astype(str).tolist()
+    vals = df_chunk[target_col].astype(str).tolist()[:n]
     rows = [
         {
             "n": i + 1,
@@ -591,9 +597,11 @@ async def preview(
         }
         for i, v in enumerate(vals)
     ]
+    nonempty = sum(1 for r in rows if r["orig"])
     audit("preview", email=_email_from_request(request), session_id=sid,
-          kind=sess.kind, column=body.column, count=len(rows))
-    return {"column": body.column, "rows": rows}
+          kind=sess.kind, column=target_col, count=len(rows),
+          nonempty=nonempty)
+    return {"column": target_col, "rows": rows}
 
 
 @app.post("/api/dry-run-sample/{sid}")
