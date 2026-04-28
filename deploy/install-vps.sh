@@ -72,8 +72,11 @@ if [[ ! -d "$SOURCE_DIR/.git" ]]; then
     chown -R kianna:kianna "$SOURCE_DIR"
 else
     echo "[install] pulling latest in $SOURCE_DIR ..."
+    # `-c safe.directory=…` lets root operate on the kianna-owned repo
+    # without needing `git config --global --add safe.directory`.
     GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=/usr/local/bin/github-pat-askpass \
-        git -C "$SOURCE_DIR" -c credential.helper= pull --ff-only origin main
+        git -C "$SOURCE_DIR" -c safe.directory="$SOURCE_DIR" \
+        -c credential.helper= pull --ff-only origin main
 fi
 
 # ─── deploy: rsync to app dir ────────────────────────────────────────────────
