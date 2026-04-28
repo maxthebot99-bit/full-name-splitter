@@ -13,6 +13,7 @@ import {
   listRuns,
   openEventStream,
   overrideRow as httpOverrideRow,
+  preview as httpPreview,
   putSettings as httpPutSettings,
   rerunRow as httpRerunRow,
   startRun as httpStartRun,
@@ -165,25 +166,33 @@ export async function listColumnsWithSamples(kind?: Kind): Promise<MapperColumn[
   }
 }
 
-export function confirmColumn(column: string, kind?: Kind): void {
+export async function confirmColumn(column: string, kind?: Kind): Promise<void> {
   const target = kind ?? active();
   const s = useStore.getState();
   s.setColumn(target, column);
   s.setMapperSelectedColumn(target, undefined);
   s.setRunState(target, 'columns_loaded');
-  // Seed `pending` placeholders for the first 200 rows so the table reads
-  // top-down (matches desktop behaviour). Real rows replace them on stream.
+  // Fetch the first ~200 raw values for that column and seed them as
+  // `pending` rows. The user sees actual data top-down before paying for
+  // Grok; real cleaned values replace these in-place once the run starts.
   const slice = s[target];
+  if (!slice.sid) return;
   const total = slice.file?.rows ?? 0;
-  const previewN = Math.min(total, 200);
-  const placeholders: Row[] = Array.from({ length: previewN }, (_, i) => ({
-    n: i + 1,
-    orig: '',
-    clean: null,
-    status: 'pending',
-    reason: '',
-  }));
-  s.replaceRows(target, placeholders);
+  const n = Math.min(total > 0 ? total : 200, 200);
+  try {
+    const res = await httpPreview(slice.sid, column, n);
+    s.replaceRows(target, res.rows);
+  } catch (err) {
+    console.warn('[preview] failed, falling back to empty placeholders:', err);
+    const placeholders: Row[] = Array.from({ length: n }, (_, i) => ({
+      n: i + 1,
+      orig: '',
+      clean: null,
+      status: 'pending',
+      reason: '',
+    }));
+    s.replaceRows(target, placeholders);
+  }
 }
 
 // ─── run start (with $5 cost-ceiling modal) ─────────────────────────────

@@ -68,7 +68,9 @@ export function N2Shell({ children }: Props) {
           zIndex: 1,
           height: '100%',
           display: 'grid',
-          gridTemplateRows: '56px 1fr 24px',
+          // Topbar/footer rows are `auto` — they grow if their contents wrap
+          // on narrow viewports rather than overflowing into the workspace.
+          gridTemplateRows: 'auto minmax(0, 1fr) auto',
         }}
       >
         {children}

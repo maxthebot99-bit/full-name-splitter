@@ -35,7 +35,7 @@ export function N2ColumnMapper() {
     if (!selected || busy) return;
     setBusy(true);
     try {
-      confirmColumn(selected, kind);
+      await confirmColumn(selected, kind);
     } finally {
       setBusy(false);
     }

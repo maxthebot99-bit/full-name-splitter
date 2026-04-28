@@ -104,6 +104,24 @@ export function downloadUrl(sid: string): string {
 
 // ─── v1.5 endpoints ─────────────────────────────────────────────────────
 
+export interface PreviewResponse {
+  column: string;
+  rows: Row[];
+}
+
+export async function preview(
+  sid: string,
+  column: string,
+  count = 200,
+): Promise<PreviewResponse> {
+  const r = await fetch(`/api/preview/${sid}`, {
+    method: 'POST',
+    headers: HEADERS_JSON,
+    body: JSON.stringify({ column, count }),
+  });
+  return jsonOrThrow(r) as Promise<PreviewResponse>;
+}
+
 export async function dryRunSample(
   sid: string,
   column: string,

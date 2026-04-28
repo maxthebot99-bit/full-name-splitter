@@ -114,9 +114,11 @@ function N2WorkspaceHeader({ view }: { view: AppState }) {
       style={{
         display: 'flex',
         alignItems: 'center',
-        gap: 14,
-        padding: '14px 28px',
+        gap: 10,
+        rowGap: 10,
+        padding: '14px 24px',
         borderBottom: `1px solid ${N2.hair}`,
+        flexWrap: 'wrap',
       }}
     >
       <StatPill

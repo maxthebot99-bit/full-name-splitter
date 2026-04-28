@@ -24,7 +24,10 @@ export function App() {
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: '360px 1fr',
+          // Sidebar shrinks down to 280px before the workspace eats into it;
+          // workspace gets `min-width: 0` so its inner overflow:auto kicks
+          // in instead of pushing the parent grid wider than the viewport.
+          gridTemplateColumns: 'minmax(260px, 360px) minmax(0, 1fr)',
           overflow: 'hidden',
         }}
       >

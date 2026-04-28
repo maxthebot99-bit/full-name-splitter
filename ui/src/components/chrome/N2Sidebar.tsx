@@ -59,7 +59,7 @@ export function N2Sidebar({ view }: { view: AppState }) {
               : 'pick a column on the right to continue'
           }
           disabled={!mapperSelected}
-          onClick={mapperSelected ? () => confirmColumn(mapperSelected) : undefined}
+          onClick={mapperSelected ? () => void confirmColumn(mapperSelected) : undefined}
         />
       )}
 

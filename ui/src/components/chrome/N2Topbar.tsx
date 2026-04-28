@@ -32,16 +32,20 @@ export function N2Topbar({ view }: Props) {
   return (
     <header
       style={{
-        display: 'grid',
-        gridTemplateColumns: '1fr auto 1fr',
+        display: 'flex',
         alignItems: 'center',
-        padding: '0 26px',
+        gap: 14,
+        rowGap: 8,
+        padding: '10px 20px',
+        minHeight: 56,
         borderBottom: `1px solid ${N2.hair}`,
         background: 'rgba(14,15,23,0.55)',
         backdropFilter: 'blur(24px)',
+        minWidth: 0,
+        flexWrap: 'wrap',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, flex: '0 1 auto', minWidth: 0 }}>
         {back && (
           <button
             type="button"
@@ -99,6 +103,8 @@ export function N2Topbar({ view }: Props) {
           display: 'flex',
           alignItems: 'center',
           gap: 8,
+          flex: '0 0 auto',
+          marginLeft: 'auto',
         }}
       >
         <span
@@ -120,6 +126,7 @@ export function N2Topbar({ view }: Props) {
           alignItems: 'center',
           gap: 10,
           justifyContent: 'flex-end',
+          flex: '0 0 auto',
         }}
       >
         {whoami && (

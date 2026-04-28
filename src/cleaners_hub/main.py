@@ -116,20 +116,30 @@ limiter = Limiter(key_func=_rate_limit_key)
 
 
 def _suggest_column(kind: str, columns: list[str]) -> str | None:
-    """Heuristic: pick a column whose name looks right for this kind."""
+    """Heuristic: pick a column whose name looks right for this kind.
+
+    Iteration is hint-major: we walk hints in priority order and match the
+    first column that contains it. This matters when a CSV has both "First
+    Name" and "Company Name" — a column-major loop would hit "First Name"
+    against the generic "name" fallback before ever trying "company". The
+    hint lists are kept disjoint enough that "company" never matches a
+    first-name column and "first" never matches a company column.
+    """
     hints = {
-        "company": ["company", "account", "organization", "organisation",
-                    "business", "brand", "name"],
+        "company": ["company", "account name", "account", "organization",
+                    "organisation", "business", "brand"],
         "name": ["first name", "first_name", "firstname", "given name",
-                 "given_name", "givenname", "name"],
+                 "given_name", "givenname", "first"],
     }[kind]
-    lowered = {c: c.lower() for c in columns}
-    for c, low in lowered.items():
-        for h in hints:
+    lowered = [(c, c.lower()) for c in columns]
+    # Exact-match pass: best signal wins.
+    for h in hints:
+        for c, low in lowered:
             if low == h:
                 return c
-    for c, low in lowered.items():
-        for h in hints:
+    # Substring-match pass.
+    for h in hints:
+        for c, low in lowered:
             if h in low:
                 return c
     return None
@@ -223,6 +233,11 @@ class RunBody(BaseModel):
 class DryRunSampleBody(BaseModel):
     column: str = Field(..., min_length=1, max_length=200)
     count: int = Field(25, ge=1, le=100)
+
+
+class PreviewBody(BaseModel):
+    column: str = Field(..., min_length=1, max_length=200)
+    count: int = Field(200, ge=1, le=500)
 
 
 class OverrideBody(BaseModel):
@@ -489,7 +504,59 @@ async def download(request: Request, sid: str = PathParam(...)):
     )
 
 
-# ─── v2 routes: dry-run sample, overrides, rerun, history, settings ────────
+# ─── v2 routes: preview, dry-run sample, overrides, rerun, history, settings
+
+@app.post("/api/preview/{sid}")
+@limiter.limit("30/minute")
+async def preview(
+    request: Request,
+    body: PreviewBody,
+    sid: str = PathParam(...),
+) -> dict:
+    """Return raw column values without running Grok.
+
+    Used by the UI right after column confirmation so the table can show
+    the actual data the user is about to clean. Reads from the same
+    pandas-loaded chunk we already use for /api/columns sampling.
+    """
+    sess = _require_session(sid)
+    meta = getattr(sess, "_file_meta_obj", None)
+    if meta is None:
+        raise HTTPException(409, "must call /api/columns first")
+    if body.column not in meta.columns:
+        raise HTTPException(400, f"unknown column: {body.column!r}")
+
+    n = body.count
+    try:
+        if str(meta.path).lower().endswith(".xlsx"):
+            df = pd.read_excel(
+                meta.path, sheet_name=meta.sheet, dtype=str,
+                nrows=n, keep_default_na=False,
+            )
+        else:
+            df = pd.read_csv(
+                meta.path, encoding=meta.encoding, sep=meta.delimiter,
+                dtype=str, nrows=n, keep_default_na=False, engine="python",
+            )
+    except Exception as e:
+        raise HTTPException(400, f"preview read failed: {type(e).__name__}: {e}") from e
+
+    if body.column not in df.columns:
+        return {"column": body.column, "rows": []}
+
+    vals = df[body.column].astype(str).tolist()
+    rows = [
+        {
+            "n": i + 1,
+            "orig": (v or "").strip(),
+            "clean": None,
+            "status": "pending",
+            "reason": "",
+        }
+        for i, v in enumerate(vals)
+    ]
+    return {"column": body.column, "rows": rows}
+
 
 @app.post("/api/dry-run-sample/{sid}")
 @limiter.limit("10/minute")
