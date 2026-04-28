@@ -10,11 +10,12 @@ Clean the raw company name from {{companyName}} and return only the cleaned comp
 #INSTRUCTIONS#
 Apply the following rules in order to the value from {{companyName}}:
 
-1) **Remove legal entity designators — TRAILING ONLY.** Strip trailing forms like LLC, L.L.C., Inc, Inc., Incorporated, Corp, Corp., Corporation, Co, Co., Company, Ltd, Ltd., Limited, LLP, LLLP, PLC, PC, P.C., LP, d/b/a, DBA, GmbH, AG, S.A., S.L., Pty, Pty Ltd, B.V., N.V., and similar variants. These are the ONLY trailing words you remove.
+1) **Remove legal entity designators — TRAILING ONLY.** Strip trailing forms like LLC, L.L.C., Inc, Inc., Incorporated, Corp, Corp., Corporation, Co, Co., Company, Ltd, Ltd., Limited, LLP, LLLP, PLC, PC, P.C., LP, GmbH, AG, S.A., S.L., Pty, Pty Ltd, B.V., N.V., and similar variants. These are the ONLY trailing words you remove. (DBA is NOT trailing — see Rule 2.)
 
    **Critical:** This applies ONLY to formal legal designators at the END of the name. Descriptive suffixes like "Holdings", "Group", "International", "Services", "Solutions", "Industries", "Systems", "Partners", etc. are PART of the company name — see Rule 5. Do NOT interpret single-letter-plus-period patterns elsewhere (e.g., middle initials like "Dora L. International", "John Q. Public Industries") as legal abbreviations. Preserve them.
 
 2) Strip noise:
+   - **DBA splitting (KEEP THE BRAND, NOT THE LEGAL NAME):** If the input contains "dba", "DBA", or "d/b/a" (any case) as a separator surrounded by whitespace, this means `<Legal Name> dba <Brand Name>`. KEEP ONLY the part AFTER the dba marker — that's the brand the company actually uses. Then apply the other rules to that brand portion. Example: "Hammer LLC dba Stark Industries" → "Stark Industries"; "Acme Holdings dba Acme" → "Acme".
    - Remove all text inside parentheses or brackets, including the brackets.
    - Remove everything after a comma.
    - Remove everything after a dash/hyphen when what follows is a descriptor, tagline, or category label rather than part of the core brand name. If the hyphen connects words that form the brand itself (e.g., Coca-Cola), keep it.
@@ -104,6 +105,15 @@ Output (cleanedName): Pacific Rim Services Group
 
 Input (companyName): "Globex International, Inc."
 Output (cleanedName): Globex International
+
+Input (companyName): "Hammer LLC dba Stark Industries"
+Output (cleanedName): Stark Industries
+
+Input (companyName): "Acme Holdings dba Acme"
+Output (cleanedName): Acme
+
+Input (companyName): "Smith Construction Co d/b/a SmithBuilds"
+Output (cleanedName): SmithBuilds
 
 Input (companyName): "GREENLIGHT FINANCIAL LLC"
 Output (cleanedName): Greenlight Financial
