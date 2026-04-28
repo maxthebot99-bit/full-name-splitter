@@ -26,7 +26,11 @@ Apply the following rules in order to the value from {{companyName}}:
    **CRITICAL CARVE-OUT — "& Co" / "& Sons" / "& Brothers" / "& Daughters" patterns are part of the brand, NOT legal designators.** This carve-out ONLY applies when the INPUT LITERALLY CONTAINS an ampersand (`&`) immediately before `Co`, `Co.`, `Sons`, `Brothers`, or `Daughters`. In that exact case, the `& Co.` (etc.) is part of the brand — preserve it.
 
    **HARD RULES — DO NOT VIOLATE:**
-   - **NEVER add an `&` that wasn't in the input.** "ARC Co." has NO ampersand, so the carve-out does NOT apply — strip `Co.` per Rule 1. Output: "ARC". Do NOT output "ARC & Co.". Hallucinating an ampersand is a strict failure.
+   - **NEVER add characters that weren't in the input.** This is a strict, universal rule that applies to every output, not just the carve-out. Do NOT add ampersands, periods, hyphens, apostrophes, or any other characters the input didn't already contain. Specifically:
+     - "ARC Co." has NO ampersand → output "ARC", NOT "ARC & Co.". Hallucinating an `&` is a strict failure.
+     - "JP Morgan LP" has NO periods → output "JP Morgan", NOT "J.P. Morgan". Hallucinating periods between letters is a strict failure, even if the canonical brand uses them.
+     - "Coca Cola" has NO hyphen → output "Coca Cola", NOT "Coca-Cola". Hallucinating a hyphen is a strict failure.
+     - You may REMOVE characters per the rules. You may CHANGE letter case per Rule 3. You may NOT INSERT new punctuation or symbols.
    - **The carve-out fires ONLY on the literal pattern `& Co`, `& Co.`, `& Sons`, `& Brothers`, `& Daughters` (with the ampersand actually present in the input).** If there is no `&` in the input, this rule does NOT apply and Rule 1's normal trailing-strip behavior controls — `Co`, `Co.`, `Company` are stripped.
    - **Plain trailing `Co` / `Co.` / `Company` (no `&`) is ALWAYS stripped.** "Willowbrook Co" → "Willowbrook". "Birchwood Co" → "Birchwood". "Umbrella Co." → "Umbrella". "Pioneer Co." → "Pioneer". "ARC Co." → "ARC". "Harvest Co" → "Harvest". No exceptions.
 
@@ -61,7 +65,7 @@ Apply the following rules in order to the value from {{companyName}}:
 
    **(a) KNOWN BRAND STYLIZATION OVERRIDES EVERYTHING.** If the input (in any casing) is a recognizable brand with a canonical stylization, output that stylization. This rule fires BEFORE the preserve-acronym rule. Examples: `MICROSOFT`/`microsoft` → `Microsoft`; `SERVICENOW` → `ServiceNow`; `BURGER KING` → `Burger King`; `MCDONALD'S` → `McDonald's`; `META` → `Meta`; `IHEART` → `iHeart`; `IPIPELINE` → `iPipeline`; `EBAY` → `eBay`; `LEXCORP` → `LexCorp`; `MARQETA` → `Marqeta`; `HUBSPOT` → `HubSpot`; `SALESFORCE` → `Salesforce`; `PLAID` → `Plaid`; `STRIPE` → `Stripe`; `SQUARE` → `Square`; `AFFIRM` → `Affirm`; `STARBUCKS` → `Starbucks`; `GOOGLE` → `Google`; `AMAZON` → `Amazon`; `APPLE` → `Apple`; `TESLA` → `Tesla`. When uncertain whether something is a known brand, prefer applying canonical case if the input is a single word ≥6 letters or a multi-word phrase.
 
-   **(b) Short acronyms / made-up brand words (2-5 letters, ALL CAPS, single word):** PRESERVE as-is. Examples passing through unchanged: TSF, GCA, ESE, ARC, IBM, NASA, ABC, BBQ, AAA, MIT, UCLA, USPS, FEMA, DOJ, STONS, JUICE, FORGE. Even if the string looks like a common word ("JUICE", "ARC"), treat it as a brand acronym at this length.
+   **(b) Short acronyms / made-up brand words (2-5 letters, single word):** Output ALL CAPS. If the input is already ALL CAPS, preserve it (TSF → TSF, GCA → GCA, ARC → ARC, IBM → IBM, NASA → NASA, ABC → ABC, BBQ → BBQ, AAA → AAA, MIT → MIT, UCLA → UCLA, USPS → USPS, FEMA → FEMA, DOJ → DOJ, STONS → STONS, JUICE → JUICE, FORGE → FORGE). If the input is lowercase or mixed case, NORMALIZE to ALL CAPS: "arc" → "ARC", "ibm" → "IBM", "nasa" → "NASA", "tsf" → "TSF". Do NOT proper-case 2-5 letter inputs to "Arc" or "Ibm" — they read as acronyms and the user wants them ALL CAPS. Even if the string looks like a common word ("JUICE", "ARC"), treat it as a brand acronym at this length.
 
    **(c) ALL CAPS word, 6+ letters: judge by whether it's a common dictionary word.**
      - If it's a clearly recognizable common English dictionary word OR a generic-sounding name that doesn't have a known stylized casing: apply proper case. Examples that MUST proper-case every time: SUMMIT → Summit; COMPASS → Compass; LIBERTY → Liberty; CATALYST → Catalyst; MOMENTUM → Momentum; HARVEST → Harvest; VELOCITY → Velocity; ZENITH → Zenith; CLEARWATER → Clearwater; BLUEPEAK → Bluepeak; FIELDSTONE → Fieldstone; SILVERSTONE → Silverstone; TRAJECTORY → Trajectory; INDEPENDENCE → Independence; OAKRIDGE → Oakridge; REDWOOD → Redwood; GREENFIELD → Greenfield; GOLDENROD → Goldenrod; GLOBEX → Globex; INNOVATE → Innovate; HARVEST → Harvest; FRONTIER → Frontier; PINECREST → Pinecrest; WILLOWBROOK → Willowbrook.
@@ -299,6 +303,27 @@ Output (cleanedName): Johnson & Johnson America
 
 Input (companyName): "Acme Worldwide"
 Output (cleanedName): Acme Worldwide
+
+Input (companyName): "JP Morgan LP"
+Output (cleanedName): JP Morgan
+
+Input (companyName): "JP Morgan"
+Output (cleanedName): JP Morgan
+
+Input (companyName): "Coca Cola"
+Output (cleanedName): Coca Cola
+
+Input (companyName): "arc"
+Output (cleanedName): ARC
+
+Input (companyName): "ibm"
+Output (cleanedName): IBM
+
+Input (companyName): "nasa"
+Output (cleanedName): NASA
+
+Input (companyName): "tsf"
+Output (cleanedName): TSF
 
 Input (companyName): "GREENLIGHT FINANCIAL LLC"
 Output (cleanedName): Greenlight Financial
