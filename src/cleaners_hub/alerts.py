@@ -39,7 +39,9 @@ from cleaners_hub.spend import _data_dir
 # ALERT_TO can be retargeted at any address.
 ALERT_TO = "jazif@benchmarkintl.com"
 ALERT_FROM = "onboarding@resend.dev"  # Resend sandbox; works without DNS.
-COSTLY_RUN_THRESHOLD_USD = Decimal("1.00")
+# Per-row cost is ~$0.000011 — a $5 run is ~454k rows, deeply unusual.
+# $1 was too sensitive (a 91k-row file is normal-ish for sales lists).
+COSTLY_RUN_THRESHOLD_USD = Decimal("5.00")
 XAI_5XX_COOLDOWN_S = 30 * 60  # don't email about xAI errors more than once per 30 min
 
 _log = logging.getLogger("cleaners_hub.alerts")
@@ -144,6 +146,42 @@ class AlertSender:
                 "If this wasn't you, hit the kill switch:\n"
                 "  one.dash.cloudflare.com → Access → Applications → cleaners-hub\n"
                 "  → Edit policy → Action: Block → Save\n"
+            ),
+        )
+
+    def run_started(
+        self,
+        *,
+        email: str,
+        session_id: str,
+        kind: str,
+        filename: str | None,
+        column: str,
+        row_count: int,
+        row_limit: int | None,
+        est_cost_usd: Decimal,
+    ) -> None:
+        """Fire on every Begin/Continue cleaning click. No dedup — each run
+        gets its own email so an operator can spot runaway behavior fast.
+        """
+        effective = row_count if row_limit is None else min(row_limit, row_count)
+        scope = (
+            "all rows" if row_limit is None
+            else f"first {row_limit:,} of {row_count:,}"
+        )
+        self._send(
+            subject=(
+                f"[cleaners-hub] {kind} run started by {email} "
+                f"— {effective:,} rows, ~${est_cost_usd:.4f}"
+            ),
+            body=(
+                f"Triggered by: {email}\n"
+                f"Kind: {kind}\n"
+                f"File: {filename or '<unknown>'}\n"
+                f"Column: {column}\n"
+                f"Scope: {scope}\n"
+                f"Estimated cost: ${est_cost_usd:.4f}\n"
+                f"Session: {session_id}\n"
             ),
         )
 

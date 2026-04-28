@@ -486,6 +486,28 @@ async def start_run(
     audit("run_start", email=email, session_id=sid, kind=sess.kind,
           column=body.column, row_limit=body.rowLimit)
 
+    # Email the operator on every run-start so misuse / accidental large
+    # runs / unfamiliar emails surface immediately — not just at done.
+    rows_in_file = meta.row_count_estimate
+    effective = (
+        rows_in_file if body.rowLimit is None
+        else min(body.rowLimit, rows_in_file)
+    )
+    est_cost = (Decimal(effective) * EST_USD_PER_ROW).quantize(Decimal("0.0001"))
+    try:
+        alerter().run_started(
+            email=email,
+            session_id=sid,
+            kind=sess.kind,
+            filename=sess.upload_filename,
+            column=body.column,
+            row_count=rows_in_file,
+            row_limit=body.rowLimit,
+            est_cost_usd=est_cost,
+        )
+    except Exception as e:
+        _log.warning("alert run_started failed: %r", e)
+
     spawn_run(sess, column=body.column, row_limit=body.rowLimit, spend=_spend)
     return session_public_dict(sess)
 
