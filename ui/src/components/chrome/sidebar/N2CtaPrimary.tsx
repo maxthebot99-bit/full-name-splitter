@@ -44,7 +44,10 @@ export function N2CtaPrimary({ label, sub, disabled, variant, onClick }: Props) 
           letterSpacing: 1.5,
           textTransform: 'uppercase',
           marginTop: 3,
-          opacity: disabled ? 0.7 : 0.65,
+          // Was opacity 0.65 on dark text — washed out badly against the
+          // lavender gradient. 0.82 keeps the secondary-text hierarchy
+          // visible without making the line hard to read.
+          opacity: disabled ? 0.7 : 0.82,
           fontWeight: 500,
         }}
       >

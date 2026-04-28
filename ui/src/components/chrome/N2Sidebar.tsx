@@ -25,10 +25,6 @@ function fmtCost(n: number) {
   if (n < 0.01) return `$${n.toFixed(4)}`;
   return `$${n.toFixed(2)}`;
 }
-function fmtHm(s: number) {
-  const m = Math.floor(s / 60);
-  return `${m}m`;
-}
 
 export function N2Sidebar({ view }: { view: AppState }) {
   const slice = useStore((s) => s[s.active]);
@@ -52,7 +48,7 @@ export function N2Sidebar({ view }: { view: AppState }) {
     ? Math.min(rowLimit, pendingCount)
     : pendingCount;
   const estSub = file
-    ? `${effectiveRows.toLocaleString('en-US')} rows · ~${fmtCost(estimateRunCost(effectiveRows))} · ~${fmtHm(Math.max(60, effectiveRows / 14))}`
+    ? `${effectiveRows.toLocaleString('en-US')} rows · ~${fmtCost(estimateRunCost(effectiveRows))}`
     : 'load a csv to begin';
   const ctaLabel = isPartial ? 'Continue cleaning' : 'Begin cleaning';
 
