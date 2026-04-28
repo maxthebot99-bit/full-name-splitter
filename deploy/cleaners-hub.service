@@ -40,11 +40,23 @@ SyslogIdentifier=cleaners-hub
 
 # ─── Hardening ───────────────────────────────────────────────────────
 # Mirrors kbot's pattern; tightened for an internet-exposed app.
+#
+# Three directives were tried initially and removed because they break
+# pandas/openpyxl/numpy under CPython:
+#   * PrivateDevices=true          (blocks /dev/shm — pandas needs it)
+#   * MemoryDenyWriteExecute=true  (blocks W+X mmap that some C exts use)
+#   * SystemCallFilter=~@privileged @resources  (blocks prlimit64,
+#     setrlimit, sched_setaffinity that numpy uses on import)
+# If a future Python upgrade makes them safe again, re-enable here.
+#
+# ReadWritePaths=/var/tmp/cleaners-hub was also tried and removed: with
+# PrivateTmp=true, /var/tmp is the unit's private namespace anyway, so
+# whitelisting a subpath there fails namespace setup if the host path
+# doesn't exist yet (which it doesn't on first start).
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=read-only
 PrivateTmp=true
-PrivateDevices=true
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectKernelLogs=true
@@ -54,15 +66,12 @@ RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 RestrictNamespaces=true
 RestrictRealtime=true
 LockPersonality=true
-MemoryDenyWriteExecute=true
 SystemCallArchitectures=native
 SystemCallFilter=@system-service
-SystemCallFilter=~@privileged @resources
-# strict ProtectSystem makes /var/lib and /var/tmp read-only by default;
-# add the dirs the app actually writes.
+# strict ProtectSystem makes /var/lib read-only by default; whitelist the
+# dir we actually need to write spend.sqlite3 into. (PrivateTmp covers
+# /var/tmp without an explicit ReadWritePaths.)
 ReadWritePaths=/var/lib/cleaners-hub
-ReadWritePaths=/var/tmp/cleaners-hub
-# Inbox for new uploads
 StateDirectory=cleaners-hub
 RuntimeDirectory=cleaners-hub
 

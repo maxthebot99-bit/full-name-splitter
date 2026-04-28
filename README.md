@@ -64,36 +64,58 @@ Prod uses systemd-creds, not these local files. See "Deploy" below.
 
 ## Deploy
 
-First deploy:
+`/usr/local/bin/app deploy` doesn't fit our shape (it auto-detects Flask, not FastAPI/uvicorn/venv apps), so we deploy via [`deploy/install-vps.sh`](deploy/install-vps.sh) — idempotent, runs the same on first install or as an updater.
+
+**One-time setup (before first run):**
 
 ```bash
-# 1. Create private repo + push
-gh repo create maxthebot99-bit/cleaners-hub --private --source=. --push
-
-# 2. Plant the Grok key on the VPS (paste value from your Windows keyring)
 ssh kianna@127.0.0.1 -p 2222
-sudo systemd-creds encrypt --name=xai-api-key - /etc/credstore.encrypted/xai-api-key
-# (paste value, Ctrl-D)
 
-# 3. Plant the Resend key the same way
-sudo systemd-creds encrypt --name=resend-api-key - /etc/credstore.encrypted/resend-api-key
-# (paste value, Ctrl-D)
+# 1. Plant the Grok key (use `read -rs` so the value never hits your shell history)
+read -rs XAI_KEY
+echo -n "$XAI_KEY" | sudo systemd-creds encrypt --name=xai-api-key - /etc/credstore.encrypted/xai-api-key
+unset XAI_KEY
+sudo chmod 600 /etc/credstore.encrypted/xai-api-key
 
-# 4. Deploy
-sudo /usr/local/bin/app deploy cleaners-hub
-
-# 5. Watch logs
-sudo journalctl -u cleaners-hub.service -f
+# 2. Plant the Resend key the same way (or `disabled` placeholder for v1)
+read -rs RESEND_KEY
+echo -n "$RESEND_KEY" | sudo systemd-creds encrypt --name=resend-api-key - /etc/credstore.encrypted/resend-api-key
+unset RESEND_KEY
+sudo chmod 600 /etc/credstore.encrypted/resend-api-key
 ```
 
-After deploy: set the Cloudflare Access JWT TTL on the wildcard policy to 4h (manual, dashboard).
-
-Updates:
+**First deploy:**
 
 ```bash
-git push
-ssh kianna@127.0.0.1 -p 2222 'sudo /usr/local/bin/app update cleaners-hub'
+# Bootstrap clone + run the install script
+sudo bash <<'BOOT'
+GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=/usr/local/bin/github-pat-askpass \
+  git -c credential.helper= clone \
+  https://github.com/maxthebot99-bit/cleaners-hub.git \
+  /home/kianna/github-repos/cleaners-hub
+chown -R kianna:kianna /home/kianna/github-repos/cleaners-hub
+bash /home/kianna/github-repos/cleaners-hub/deploy/install-vps.sh
+BOOT
 ```
+
+**Updates (after first deploy):**
+
+```bash
+git push                              # from your laptop
+ssh kianna@127.0.0.1 -p 2222 'sudo /var/www/dashboard/apps/cleaners-hub/deploy/install-vps.sh'
+```
+
+The script is idempotent — if cloudflared ingress and DNS already exist, it skips them and just refreshes code + venv + restarts the service.
+
+**After first deploy:** in the Cloudflare dashboard, set the Access JWT TTL on the `*.maxcommandcenter.com` policy to 4h.
+
+## v1 limitations (documented, not bugs)
+
+- **Sessions don't survive service restarts.** `PrivateTmp=true` wipes `/var/tmp/cleaners-hub/` on every unit start, so any in-flight run is lost on `systemctl restart`. Acceptable for v1; deferred to v2 (move outputs to `/var/lib/cleaners-hub/outputs/`).
+- **No mid-run resume.** If you refresh the browser during a run, the SSE stream drops; the worker keeps going on the server but the new tab can't reconstruct progress. Banner in the UI says don't refresh during a run.
+- **No resumable downloads.** Browser drop = click Download again.
+- **60-min idle TTL.** Walk away for an hour, come back, you re-upload.
+- **Resend disabled by default in v1.** The `resend-api-key` credential can be the literal string `disabled`; alerts silently no-op until you replace it with a real Resend API key + restart.
 
 ---
 
