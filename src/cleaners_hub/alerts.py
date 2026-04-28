@@ -10,9 +10,11 @@ If ``RESEND_API_KEY_FILE`` is unset or empty, all methods are no-ops — the
 app keeps working, alerts are simply disabled. We log a one-time WARNING at
 startup so an operator notices.
 
-Recipient is fixed at jazif@benchmarkintl.com. Sender is the Resend sandbox
-``onboarding@resend.dev`` for v1; switch to a verified
-``noreply@maxcommandcenter.com`` later by changing FROM_ADDR.
+Recipient is fixed at the Resend-account owner email. Resend's sandbox
+sender (``onboarding@resend.dev``) refuses to deliver to anyone else
+until you verify a domain at resend.com/domains — once that's done, swap
+ALERT_FROM to a verified address (e.g. ``noreply@maxcommandcenter.com``)
+and ALERT_TO can be retargeted at any address (e.g. work email).
 """
 
 from __future__ import annotations
@@ -28,6 +30,13 @@ from pathlib import Path
 from cleaners_hub.secrets import get_resend_key
 from cleaners_hub.spend import _data_dir
 
+# Recipient must match the Resend account owner email until a domain is
+# verified at resend.com/domains — the sandbox sender (onboarding@resend.dev)
+# refuses to deliver elsewhere. Resend account is owned by
+# jazif@benchmarkintl.com (signed up 2026-04-28), so that's the only
+# deliverable recipient at the moment. After domain verification: flip
+# ALERT_FROM to noreply@maxcommandcenter.com (or chosen subdomain) and
+# ALERT_TO can be retargeted at any address.
 ALERT_TO = "jazif@benchmarkintl.com"
 ALERT_FROM = "onboarding@resend.dev"  # Resend sandbox; works without DNS.
 COSTLY_RUN_THRESHOLD_USD = Decimal("1.00")
