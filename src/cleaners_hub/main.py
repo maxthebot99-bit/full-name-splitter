@@ -700,6 +700,55 @@ async def preview(
         return {"column": target_col, "rows": []}
 
     vals = df_chunk[target_col].astype(str).tolist()[:n]
+
+    # Address kind: also pull the secondary column (business-name) and return
+    # AddressRow-shaped pending rows so the frontend table can show inputs
+    # before the run starts. Frontend matches on the AddressRow shape via
+    # the slice's `kind`.
+    if sess.kind == "address" and body.secondary_column:
+        secondary_wanted = body.secondary_column.strip()
+        secondary_low = secondary_wanted.lower()
+        secondary_col: str | None = None
+        for c in meta.columns:
+            if (
+                c == secondary_wanted
+                or c.strip() == secondary_wanted
+                or c.lower() == secondary_low
+            ):
+                secondary_col = c
+                break
+        if secondary_col is None or secondary_col not in df_chunk.columns:
+            raise HTTPException(
+                400, f"unknown secondary column: {body.secondary_column!r}"
+            )
+        names = df_chunk[secondary_col].astype(str).tolist()[:n]
+        # Pad shorter list with empty strings to align lengths.
+        while len(names) < len(vals):
+            names.append("")
+        rows = [
+            {
+                "n": i + 1,
+                "business_name": (names[i] or "").strip(),
+                "website_url": (vals[i] or "").strip(),
+                "street": "",
+                "city": "",
+                "state": "",
+                "zip": "",
+                "country": "",
+                "source_url": "",
+                "confidence": 0.0,
+                "error": "",
+                "status": "blank",
+                "flags": [],
+            }
+            for i in range(len(vals))
+        ]
+        sess.selected_column = target_col
+        audit("preview", email=_email_from_request(request), session_id=sid,
+              kind=sess.kind, column=target_col, count=len(rows),
+              secondary_column=secondary_col)
+        return {"column": target_col, "rows": rows}
+
     rows = [
         {
             "n": i + 1,

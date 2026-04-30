@@ -125,11 +125,17 @@ export async function preview(
   sid: string,
   column: string,
   count = 200,
+  secondaryColumn?: string,
 ): Promise<PreviewResponse> {
+  const body: { column: string; count: number; secondary_column?: string } = {
+    column,
+    count,
+  };
+  if (secondaryColumn) body.secondary_column = secondaryColumn;
   const r = await fetch(`/api/preview/${sid}`, {
     method: 'POST',
     headers: HEADERS_JSON,
-    body: JSON.stringify({ column, count }),
+    body: JSON.stringify(body),
   });
   return jsonOrThrow(r) as Promise<PreviewResponse>;
 }

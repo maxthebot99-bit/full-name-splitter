@@ -26,6 +26,7 @@ import {
 import { handleSseEvent, useStore, viewState } from '../store';
 import { mapDryRunSample } from './mapping';
 import type {
+  AddressRow,
   AppSettings,
   AppSettingsPatch,
   Kind,
@@ -204,9 +205,10 @@ export async function confirmColumn(column: string, kind?: Kind): Promise<void> 
 }
 
 
-// Address kind needs to confirm TWO columns (business name + website URL)
-// before it can run. Skips the single-column preview seed since address
-// preview rows have a different shape; the table fills in live during the run.
+// Address kind: confirm TWO columns (business name + website URL), then
+// fetch a preview of the input rows so the user sees their data in the
+// table before the run starts. /api/preview returns AddressRow-shaped
+// pending rows when secondary_column is set.
 export async function confirmAddressColumns(
   websiteColumn: string,
   nameColumn: string,
@@ -219,8 +221,17 @@ export async function confirmAddressColumns(
   s.setMapperSelectedColumn(target, undefined);
   s.setMapperSelectedSecondary(target, undefined);
   s.setRunState(target, 'columns_loaded');
-  // No preview seed for address yet — the table fills in live during the run.
-  // (A future v1.x can add a preview endpoint that fetches both columns.)
+  const slice = s[target];
+  if (!slice.sid) return;
+  const total = slice.file?.rows ?? 0;
+  const n = Math.min(total > 0 ? total : 200, 200);
+  try {
+    const res = await httpPreview(slice.sid, websiteColumn, n, nameColumn);
+    // The backend returns AddressRow-shaped rows for kind=address.
+    s.replaceAddressRows(target, res.rows as unknown as AddressRow[]);
+  } catch (err) {
+    console.warn('[address preview] failed, table will fill during run:', err);
+  }
 }
 
 // ─── run start (with $5 cost-ceiling modal) ─────────────────────────────
