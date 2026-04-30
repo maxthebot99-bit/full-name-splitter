@@ -1,9 +1,14 @@
-// Zustand store. One slice per kind (company / name) shaped to mirror the
-// desktop Nocturne store, plus shared whoami / settings / history. SSE
-// events are dispatched into the active slice via `handleSseEvent`.
+// Zustand store. One slice per kind (company / name / address) shaped to
+// mirror the desktop Nocturne store, plus shared whoami / settings / history.
+// SSE events are dispatched into the active slice via `handleSseEvent`.
+//
+// Address slice diverges from company/name in row shape — uses
+// `addressRows: AddressRow[]` (multi-field) instead of `rows: Row[]`. Both
+// fields exist on every slice; only the kind-relevant one is populated.
 
 import { create } from 'zustand';
 import type {
+  AddressRow,
   AppSettings,
   AppState,
   CostModalState,
@@ -50,6 +55,10 @@ export interface KindSlice {
   progress: Progress;
   telemetry: Telemetry;
   rows: Row[];
+  // Address kind only — multi-field row shape. Empty for company/name.
+  // Both fields exist on every slice for type uniformity; the renderer
+  // discriminates on `kind` to read the right one.
+  addressRows: AddressRow[];
   selectedRowIdx?: number;
   error?: UiError;
   spendBlocked?: { todayUsd: number; capUsd: number };
@@ -62,6 +71,10 @@ export interface KindSlice {
   costModal?: CostModalState;
   // Mapper selection — the column the user clicked but hasn't confirmed yet.
   mapperSelectedColumn?: string;
+  // Address kind only — the secondary (business-name) column the user
+  // clicked but hasn't confirmed yet. The primary `mapperSelectedColumn`
+  // holds the website URL column for address.
+  mapperSelectedSecondary?: string;
   // Active SSE subscription, if any.
   eventStream?: EventSource;
   // Wall-clock millis (Date.now()) of the last telemetry frame the store
@@ -86,6 +99,7 @@ interface RootState {
   settingsModalOpen: boolean;
   company: KindSlice;
   name: KindSlice;
+  address: KindSlice;
 }
 
 interface RootActions {
@@ -100,12 +114,18 @@ interface RootActions {
   setRunState: (k: Kind, s: RunState) => void;
   setFile: (k: Kind, f?: FileMeta) => void;
   setColumn: (k: Kind, col: string) => void;
+  setSecondaryColumn: (k: Kind, col: string) => void;
   setProgress: (k: Kind, p: Partial<Progress>) => void;
   setTelemetry: (k: Kind, t: Partial<Telemetry>) => void;
   appendRows: (k: Kind, rs: Row[]) => void;
   upsertRow: (k: Kind, r: Row) => void;
   upsertRows: (k: Kind, rs: Row[]) => void;
   replaceRows: (k: Kind, rs: Row[]) => void;
+  // Address-tab equivalents — different row shape.
+  appendAddressRows: (k: Kind, rs: AddressRow[]) => void;
+  upsertAddressRow: (k: Kind, r: AddressRow) => void;
+  upsertAddressRows: (k: Kind, rs: AddressRow[]) => void;
+  replaceAddressRows: (k: Kind, rs: AddressRow[]) => void;
   selectRow: (k: Kind, idx?: number) => void;
   setUiError: (k: Kind, e?: UiError) => void;
   setSpendBlocked: (k: Kind, b?: { todayUsd: number; capUsd: number }) => void;
@@ -115,6 +135,7 @@ interface RootActions {
   setDryRunLoading: (k: Kind, b: boolean) => void;
   setCostModal: (k: Kind, m?: CostModalState) => void;
   setMapperSelectedColumn: (k: Kind, col?: string) => void;
+  setMapperSelectedSecondary: (k: Kind, col?: string) => void;
   setEventStream: (k: Kind, es?: EventSource) => void;
   markRowInFlight: (k: Kind, n: number) => void;
   unmarkRowInFlight: (k: Kind, n: number) => void;
@@ -129,6 +150,7 @@ function freshSlice(kind: Kind): KindSlice {
     progress: { ...initialProgress },
     telemetry: { ...initialTelemetry },
     rows: [],
+    addressRows: [],
     filter: 'all',
     dryRunFilter: 'all',
     dryRunLoading: false,
@@ -162,6 +184,7 @@ export const useStore = create<Store>((set, get) => {
     settingsModalOpen: false,
     company: freshSlice('company'),
     name: freshSlice('name'),
+    address: freshSlice('address'),
 
     setActive: (k) => set({ active: k }),
     setWhoami: (w) => set({ whoami: w }),
@@ -183,6 +206,11 @@ export const useStore = create<Store>((set, get) => {
       const cur = get()[k];
       if (!cur.file) return;
       update(k, { file: { ...cur.file, column: col } });
+    },
+    setSecondaryColumn: (k, col) => {
+      const cur = get()[k];
+      if (!cur.file) return;
+      update(k, { file: { ...cur.file, secondary_column: col } });
     },
     setProgress: (k, p) => {
       const cur = get()[k];
@@ -233,6 +261,39 @@ export const useStore = create<Store>((set, get) => {
       update(k, { rows: next });
     },
     replaceRows: (k, rs) => update(k, { rows: rs }),
+    // Address-row equivalents — same upsert/replace semantics, different shape.
+    appendAddressRows: (k, rs) => {
+      const cur = get()[k];
+      update(k, { addressRows: [...cur.addressRows, ...rs] });
+    },
+    upsertAddressRow: (k, r) => {
+      const cur = get()[k];
+      const idx = cur.addressRows.findIndex((x) => x.n === r.n);
+      if (idx === -1) {
+        update(k, { addressRows: [...cur.addressRows, r] });
+        return;
+      }
+      const next = cur.addressRows.slice();
+      next[idx] = r;
+      update(k, { addressRows: next });
+    },
+    upsertAddressRows: (k, rs) => {
+      const cur = get()[k];
+      const next = cur.addressRows.slice();
+      const idxByN = new Map<number, number>();
+      for (let i = 0; i < next.length; i++) idxByN.set(next[i].n, i);
+      for (const r of rs) {
+        const idx = idxByN.get(r.n);
+        if (idx === undefined) {
+          idxByN.set(r.n, next.length);
+          next.push(r);
+        } else {
+          next[idx] = r;
+        }
+      }
+      update(k, { addressRows: next });
+    },
+    replaceAddressRows: (k, rs) => update(k, { addressRows: rs }),
     selectRow: (k, idx) => update(k, { selectedRowIdx: idx }),
     setUiError: (k, e) => update(k, { error: e }),
     setSpendBlocked: (k, b) => update(k, { spendBlocked: b }),
@@ -242,6 +303,7 @@ export const useStore = create<Store>((set, get) => {
     setDryRunLoading: (k, b) => update(k, { dryRunLoading: b }),
     setCostModal: (k, m) => update(k, { costModal: m }),
     setMapperSelectedColumn: (k, col) => update(k, { mapperSelectedColumn: col }),
+    setMapperSelectedSecondary: (k, col) => update(k, { mapperSelectedSecondary: col }),
     setEventStream: (k, es) => update(k, { eventStream: es }),
     markRowInFlight: (k, n) => {
       const cur = get()[k];
@@ -288,10 +350,21 @@ export function handleSseEvent(kind: Kind, ev: SseEvent, expectedSid?: string): 
       break;
     }
     case 'rows':
-      s.upsertRows(kind, ev.payload as Row[]);
+      // Address rows have a different shape than company/name (multi-field).
+      // The backend sends both via the same 'rows' SSE event; discriminate
+      // on the active slice's kind to route into the right store field.
+      if (kind === 'address') {
+        s.upsertAddressRows(kind, ev.payload as AddressRow[]);
+      } else {
+        s.upsertRows(kind, ev.payload as Row[]);
+      }
       break;
     case 'row_update':
-      s.upsertRow(kind, ev.payload as Row);
+      if (kind === 'address') {
+        s.upsertAddressRow(kind, ev.payload as AddressRow);
+      } else {
+        s.upsertRow(kind, ev.payload as Row);
+      }
       break;
     case 'telemetry': {
       const t = ev.payload as Partial<Telemetry>;
@@ -301,7 +374,10 @@ export function handleSseEvent(kind: Kind, ev: SseEvent, expectedSid?: string): 
       // stale by the time SSE events trickle in over a long run).
       const live = useStore.getState()[kind];
       const total = live.file?.rows ?? 0;
-      const processed = live.rows.filter((r) => r.status !== 'pending').length;
+      // Count processed rows from whichever shape this kind uses.
+      const processed = kind === 'address'
+        ? live.addressRows.filter((r) => r.status !== 'blank' || r.error !== '').length
+        : live.rows.filter((r) => r.status !== 'pending').length;
       const elapsedHint = (t as { elapsed_s?: number }).elapsed_s;
       s.setProgress(kind, {
         processed,
