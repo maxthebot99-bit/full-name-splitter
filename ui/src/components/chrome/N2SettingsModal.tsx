@@ -229,6 +229,41 @@ export function N2SettingsModal() {
           </Field>
         </div>
 
+        {/* Address tab — separate vendor (OpenRouter / Llama) than the
+            Grok-based company/name cleaners. Bounds and allowed-models
+            differ; render its own row. */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+          <Field label="Batch size · addresses">
+            <input
+              type="number"
+              min={settings.min_batch_size_address ?? 25}
+              max={settings.max_batch_size_address ?? 200}
+              disabled={!isAdmin || saving}
+              value={get('batch_size_address') ?? settings.batch_size_address ?? 100}
+              onChange={(e) =>
+                setDraft((d) => ({ ...d, batch_size_address: Number(e.target.value) }))
+              }
+              style={inputStyle()}
+            />
+          </Field>
+          <Field label="Model · addresses">
+            <select
+              disabled={!isAdmin || saving}
+              value={get('model_address') ?? settings.model_address ?? ''}
+              onChange={(e) =>
+                setDraft((d) => ({ ...d, model_address: e.target.value }))
+              }
+              style={inputStyle()}
+            >
+              {(settings.allowed_models_address ?? []).map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </div>
+
         {error && (
           <div
             style={{
