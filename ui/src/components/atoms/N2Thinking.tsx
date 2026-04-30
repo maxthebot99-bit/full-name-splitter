@@ -33,6 +33,14 @@ export const PHRASES_NAME = [
   'expanding initials',
   'reconciling',
 ];
+export const PHRASES_ADDRESS = [
+  'fetching site',
+  'reading footer',
+  'parsing JSON-LD',
+  'asking llama',
+  'extracting fields',
+  'verifying scope',
+];
 
 export function N2Thinking({
   phrases = DEFAULT_PHRASES_COMPANY,

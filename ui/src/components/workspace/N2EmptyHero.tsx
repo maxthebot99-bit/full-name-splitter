@@ -3,8 +3,12 @@ import { useStore } from '../../store';
 
 export function N2EmptyHero() {
   const kind = useStore((s) => s.active);
-  const isCompany = kind === 'company';
-  const subject = isCompany ? 'company names' : 'first names';
+  const subject =
+    kind === 'company' ? 'company names'
+    : kind === 'address' ? 'business addresses'
+    : 'first names';
+  const verb = kind === 'address' ? 'extracts' : 'reads';
+  const subjectSingular = subject.replace(/s$/, '');
   return (
     <div
       style={{
@@ -55,8 +59,7 @@ export function N2EmptyHero() {
             margin: '26px auto 0',
           }}
         >
-          Drop a CSV on the left. Grok reads each {subject.replace(/s$/, '')}, explains
-          what's off, and returns an auditable list — every change, with reasoning.
+          Drop a CSV on the left. {kind === 'address' ? 'Llama' : 'Grok'} {verb} each {subjectSingular},{kind === 'address' ? ' verifies the source,' : ' explains what\'s off,'} and returns an auditable list — every {kind === 'address' ? 'extraction' : 'change'}, with reasoning.
         </div>
       </div>
     </div>

@@ -6,6 +6,7 @@ import {
   N2Thinking,
   PHRASES_COMPANY,
   PHRASES_NAME,
+  PHRASES_ADDRESS,
 } from '../../atoms/N2Thinking';
 
 function fmtInt(n: number): string {
@@ -14,7 +15,14 @@ function fmtInt(n: number): string {
 
 function noun(kind: Kind, plural = true): string {
   if (kind === 'company') return plural ? 'company names' : 'company name';
+  if (kind === 'address') return plural ? 'business addresses' : 'business address';
   return plural ? 'first names' : 'first name';
+}
+
+function pickColumnLabel(kind: Kind): string {
+  if (kind === 'company') return 'company';
+  if (kind === 'address') return 'business-name + website';
+  return 'first-name';
 }
 
 function contentFor(
@@ -35,7 +43,7 @@ function contentFor(
     case 'awaiting_column':
       return (
         <>
-          {fmtInt(total)} rows — <em style={{ color: N2.accent }}>pick the {kind === 'company' ? 'company' : 'first-name'} column</em>.
+          {fmtInt(total)} rows — <em style={{ color: N2.accent }}>pick the {pickColumnLabel(kind)} column{kind === 'address' ? 's' : ''}</em>.
         </>
       );
     case 'indexed':
@@ -55,7 +63,7 @@ function contentFor(
     case 'running':
       return (
         <>
-          Reading {kind === 'company' ? 'name' : 'name'} <em style={{ color: N2.accent }}>{fmtInt(processed)}</em> of {fmtInt(total)}.
+          {kind === 'address' ? 'Extracting' : 'Reading'} {kind === 'address' ? 'address' : 'name'} <em style={{ color: N2.accent }}>{fmtInt(processed)}</em> of {fmtInt(total)}.
         </>
       );
     case 'done':
@@ -85,7 +93,12 @@ export function N2SidebarHeadline({ view }: { view: AppState }) {
   const total = slice.file?.rows ?? 0;
   const partialCleaned = processedRowCount(slice);
   const inFlight = slice.rowsInFlight;
-  const phrases = slice.kind === 'company' ? PHRASES_COMPANY : PHRASES_NAME;
+  const phrases =
+    slice.kind === 'company'
+      ? PHRASES_COMPANY
+      : slice.kind === 'address'
+        ? PHRASES_ADDRESS
+        : PHRASES_NAME;
 
   // ▶ rerun in flight: replace the static headline with a live "thinking"
   // strip naming the row(s) being processed. If the user has multiple
