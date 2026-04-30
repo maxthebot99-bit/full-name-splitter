@@ -187,50 +187,61 @@ export function N2Topbar({ view }: Props) {
             <ChromeBtn label="Settings" onClick={() => setSettingsOpen(true)} last />
           )}
         </div>
-        <div
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 8,
-            padding: '5px 12px 5px 6px',
-            border: `1px solid ${N2.hair}`,
-            borderRadius: 100,
-            fontSize: 11,
-            color: N2.text2,
-            whiteSpace: 'nowrap',
-          }}
-        >
-          <span
-            style={{
-              width: 22,
-              height: 22,
-              borderRadius: 100,
-              background: '#000',
-              display: 'grid',
-              placeItems: 'center',
-              fontSize: 11,
-              fontWeight: 700,
-              color: '#fff',
-              fontFamily: fBody,
-            }}
-          >
-            𝕏
-          </span>
-          <span style={{ fontFamily: fMono, fontSize: 10.5, letterSpacing: 0.3 }}>
-            grok
-          </span>
-          <span
-            style={{
-              width: 5,
-              height: 5,
-              borderRadius: 3,
-              background: N2.sage,
-              boxShadow: `0 0 5px ${N2.sage}`,
-            }}
-          />
-        </div>
+        <ProviderChip kind={active} />
       </div>
     </header>
+  );
+}
+
+// Provider chip — shows which LLM vendor backs the currently-active tab.
+// Company / first-name → xAI Grok. Address → Llama via OpenRouter.
+function ProviderChip({ kind }: { kind: 'company' | 'name' | 'address' }) {
+  const isAddress = kind === 'address';
+  const label = isAddress ? 'llama' : 'grok';
+  const glyph = isAddress ? '🦙' : '𝕏';
+  return (
+    <div
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 8,
+        padding: '5px 12px 5px 6px',
+        border: `1px solid ${N2.hair}`,
+        borderRadius: 100,
+        fontSize: 11,
+        color: N2.text2,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      <span
+        style={{
+          width: 22,
+          height: 22,
+          borderRadius: 100,
+          background: isAddress ? '#1f1d2e' : '#000',
+          display: 'grid',
+          placeItems: 'center',
+          fontSize: isAddress ? 13 : 11,
+          fontWeight: 700,
+          color: '#fff',
+          fontFamily: fBody,
+        }}
+      >
+        {glyph}
+      </span>
+      <span style={{ fontFamily: fMono, fontSize: 10.5, letterSpacing: 0.3 }}>
+        {label}
+      </span>
+      <span
+        style={{
+          width: 5,
+          height: 5,
+          borderRadius: 3,
+          background: N2.sage,
+          boxShadow: `0 0 5px ${N2.sage}`,
+        }}
+      />
+    </div>
   );
 }
 
