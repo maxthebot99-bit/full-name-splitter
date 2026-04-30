@@ -126,7 +126,15 @@ export async function handleFileSelected(kind: Kind, file: File): Promise<void> 
         column: '', // user picks via the mapper
         columns: colNames,
       },
-      mapperSelectedColumn: cols.suggested ?? undefined,
+      mapperSelectedColumn:
+        kind === 'address'
+          ? cols.suggested_pair?.website ?? undefined
+          : cols.suggested ?? undefined,
+      // Address kind: also pre-pick the business-name column.
+      mapperSelectedSecondary:
+        kind === 'address'
+          ? cols.suggested_pair?.name ?? undefined
+          : undefined,
     });
   } catch (err) {
     console.error('[upload] failed:', err);
@@ -195,6 +203,26 @@ export async function confirmColumn(column: string, kind?: Kind): Promise<void> 
   }
 }
 
+
+// Address kind needs to confirm TWO columns (business name + website URL)
+// before it can run. Skips the single-column preview seed since address
+// preview rows have a different shape; the table fills in live during the run.
+export async function confirmAddressColumns(
+  websiteColumn: string,
+  nameColumn: string,
+  kind?: Kind,
+): Promise<void> {
+  const target = kind ?? active();
+  const s = useStore.getState();
+  s.setColumn(target, websiteColumn);
+  s.setSecondaryColumn(target, nameColumn);
+  s.setMapperSelectedColumn(target, undefined);
+  s.setMapperSelectedSecondary(target, undefined);
+  s.setRunState(target, 'columns_loaded');
+  // No preview seed for address yet — the table fills in live during the run.
+  // (A future v1.x can add a preview endpoint that fetches both columns.)
+}
+
 // ─── run start (with $5 cost-ceiling modal) ─────────────────────────────
 
 export function beginCleaningWithCostCheck(
@@ -246,7 +274,10 @@ export async function startRun(
   // Open SSE before sending the start so we don't miss the first batch.
   openSseFor(target);
   try {
-    await httpStartRun(slice.sid, column, rowLimit);
+    // Address kind needs the secondary (business-name) column too.
+    const secondary =
+      target === 'address' ? slice.file?.secondary_column : undefined;
+    await httpStartRun(slice.sid, column, rowLimit, secondary);
   } catch (err) {
     console.error('[run] start failed:', err);
     const msg = err instanceof Error ? err.message : 'run failed';

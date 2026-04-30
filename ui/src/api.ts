@@ -89,11 +89,18 @@ export async function startRun(
   sid: string,
   column: string,
   rowLimit?: number,
+  secondaryColumn?: string,
 ): Promise<void> {
+  const body: {
+    column: string;
+    rowLimit: number | null;
+    secondary_column?: string;
+  } = { column, rowLimit: rowLimit ?? null };
+  if (secondaryColumn) body.secondary_column = secondaryColumn;
   const r = await fetch(`/api/run/${sid}`, {
     method: 'POST',
     headers: HEADERS_JSON,
-    body: JSON.stringify({ column, rowLimit: rowLimit ?? null }),
+    body: JSON.stringify(body),
   });
   if (!r.ok && r.status !== 202) await jsonOrThrow(r);
 }
