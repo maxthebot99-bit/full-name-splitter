@@ -44,9 +44,14 @@ _log = logging.getLogger("cleaners_hub.workers")
 
 
 def _modules_for(kind: str):
-    """Return (pipeline, io_reader, io_writer, types, XAIProvider, errors) for a kind."""
+    """Return (pipeline, io_reader, io_writer, types, XAIProvider, errors, config) for company/name.
+
+    Address kind has a different module shape (different provider class,
+    AddressContext instead of NameContext, multi-column writer) — use
+    ``_modules_for_address()`` for that.
+    """
     if kind not in ("company", "name"):
-        raise ValueError(f"unknown kind: {kind!r}")
+        raise ValueError(f"unknown kind for _modules_for: {kind!r}")
     base = f"cleaners_hub.cleaners.{kind}"
     pipeline = importlib.import_module(f"{base}.pipeline")
     io_reader = importlib.import_module(f"{base}.io.reader")
@@ -56,6 +61,32 @@ def _modules_for(kind: str):
     errors = importlib.import_module(f"{base}.errors")
     config = importlib.import_module(f"{base}.config")
     return pipeline, io_reader, io_writer, types_mod, xai.XAIProvider, errors, config
+
+
+def _modules_for_address():
+    """Return the address-cleaner modules.
+
+    Different shape from _modules_for() because the address tab uses a
+    different LLM provider (OpenRouter, not xAI), a multi-column output
+    writer, and AddressContext instead of NameContext.
+    """
+    base = "cleaners_hub.cleaners.address"
+    pipeline = importlib.import_module(f"{base}.pipeline")
+    io_reader = importlib.import_module(f"{base}.io.reader")
+    io_writer = importlib.import_module(f"{base}.io.writer")
+    types_mod = importlib.import_module(f"{base}.types")
+    openrouter = importlib.import_module(f"{base}.llm.openrouter")
+    errors = importlib.import_module(f"{base}.errors")
+    config = importlib.import_module(f"{base}.config")
+    return (
+        pipeline,
+        io_reader,
+        io_writer,
+        types_mod,
+        openrouter.OpenRouterLlamaProvider,
+        errors,
+        config,
+    )
 
 
 def _ctx_to_row(n: int, ctx) -> dict[str, Any]:
@@ -87,6 +118,62 @@ def _stats_to_telemetry(stats, elapsed: float) -> dict[str, Any]:
         "tokensIn": int(stats.prompt_tokens),
         "tokensOut": int(stats.completion_tokens),
         "nullCount": int(stats.null_rows),
+        "rulesFired": int(stats.api_calls),
+        "costUsd": round(float(stats.actual_cost), 4),
+    }
+
+
+def _address_ctx_to_row(n: int, ctx) -> dict[str, Any]:
+    """SSE/HTTP row payload for the address tab — multi-field shape.
+
+    Differs from _ctx_to_row (single-string ``orig`` / ``clean``) because
+    address rows have two inputs and seven structured outputs. The frontend
+    address-tab renderer reads this shape.
+    """
+    has_addr = bool(ctx.street or ctx.city)
+    if ctx.error == "FOREIGN":
+        status = "foreign"
+    elif ctx.error in (
+        "CLOUDFLARE", "SITE_BROKEN", "DEAD_DOMAIN",
+        "TLS_ERROR", "NO_RESPONSE", "LLM_UNAVAILABLE",
+    ):
+        status = "fetch_failed"
+    elif has_addr:
+        status = "extracted"
+    else:
+        status = "blank"
+    return {
+        "n": n,
+        "business_name": ctx.business_name,
+        "website_url": ctx.website_url,
+        "street": ctx.street or "",
+        "city": ctx.city or "",
+        "state": ctx.state or "",
+        "zip": ctx.zip or "",
+        "country": ctx.country or "",
+        "source_url": ctx.source_url or "",
+        "confidence": round(float(ctx.confidence or 0.0), 2),
+        "error": ctx.error or "",
+        "status": status,
+        "flags": sorted(ctx.flags),
+    }
+
+
+def _address_stats_to_telemetry(stats, elapsed: float) -> dict[str, Any]:
+    """Telemetry for the address tab — different stats shape than company/name."""
+    total_processed = (
+        stats.extracted_rows + stats.null_rows
+        + stats.foreign_rows + stats.fetch_failed_rows
+    )
+    rps = total_processed / elapsed if elapsed > 0 else 0.0
+    return {
+        "rowsPerSecond": round(rps, 2),
+        "tokensIn": int(stats.prompt_tokens),
+        "tokensOut": int(stats.completion_tokens),
+        "extractedCount": int(stats.extracted_rows),
+        "blankCount": int(stats.null_rows),
+        "foreignCount": int(stats.foreign_rows),
+        "fetchFailedCount": int(stats.fetch_failed_rows),
         "rulesFired": int(stats.api_calls),
         "costUsd": round(float(stats.actual_cost), 4),
     }
