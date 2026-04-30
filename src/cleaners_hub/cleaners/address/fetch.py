@@ -9,7 +9,7 @@ Returns (text, status) where status is one of:
   - ok          : got content
   - cloudflare  : 403/CF challenge body
   - broken      : 5xx, Wix-error pages, etc.
-  - dead        : DNS dead, 404, cross-domain hijack
+  - dead        : DNS dead, 404
   - tls_error   : cert problems we couldn't bypass
   - no_response : timeouts, generic failure
 """
@@ -167,10 +167,6 @@ async def _fetch_url(
         r = await session.get(
             url, timeout=TIMEOUT, allow_redirects=True, verify=verify
         )
-        if expected_host:
-            final_host = urlparse(str(r.url)).netloc
-            if _bare_host(final_host) != _bare_host(expected_host):
-                return None, "dead"
         if r.status_code == 200 and r.text and not any(
             s in r.text.lower()[:4000] for s in CF_FINGERPRINTS
         ):
