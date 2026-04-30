@@ -26,13 +26,15 @@ export function N2ColumnMapper() {
   const setSecondary = useStore((s) => s.setMapperSelectedSecondary);
   const [columns, setColumns] = useState<MapperColumn[] | null>(null);
   const [busy, setBusy] = useState(false);
-  // For address: 'name' = step 1 (pick business-name), 'website' = step 2.
-  // Reset to 'name' whenever the user switches into the address tab.
-  const [addressStep, setAddressStep] = useState<'name' | 'website'>('name');
+  // For address: 'website' = step 1 (the primary input — what the pipeline
+  // actually fetches), 'name' = step 2. The website is recognizable from
+  // sample values (URL-shaped strings) and is the lookup key, so it should
+  // be confirmed first.
+  const [addressStep, setAddressStep] = useState<'website' | 'name'>('website');
 
   useEffect(() => {
     let cancelled = false;
-    setAddressStep('name');
+    setAddressStep('website');
     void listColumnsWithSamples(kind).then((cols) => {
       if (cancelled) return;
       setColumns(cols);
@@ -51,9 +53,9 @@ export function N2ColumnMapper() {
   const isAddress = kind === 'address';
   // The "active" selection for the current step.
   const selected = isAddress
-    ? addressStep === 'name'
-      ? secondarySelected
-      : primarySelected
+    ? addressStep === 'website'
+      ? primarySelected
+      : secondarySelected
     : primarySelected;
   const setSelected = (col: string) => {
     if (isAddress && addressStep === 'name') {
@@ -65,20 +67,20 @@ export function N2ColumnMapper() {
 
   const onConfirm = async () => {
     if (!selected || busy) return;
-    if (isAddress && addressStep === 'name') {
-      // Advance to step 2 (website pick).
-      setAddressStep('website');
+    if (isAddress && addressStep === 'website') {
+      // Advance to step 2 (name pick).
+      setAddressStep('name');
       return;
     }
     setBusy(true);
     try {
       if (isAddress) {
-        if (!secondarySelected) {
+        if (!primarySelected) {
           setBusy(false);
-          setAddressStep('name');
+          setAddressStep('website');
           return;
         }
-        await confirmAddressColumns(selected, secondarySelected, kind);
+        await confirmAddressColumns(primarySelected, selected, kind);
       } else {
         await confirmColumn(selected, kind);
       }
@@ -92,13 +94,13 @@ export function N2ColumnMapper() {
     ? kind === 'company'
       ? 'Which column holds the company name?'
       : 'Which column holds the first name?'
-    : addressStep === 'name'
-      ? 'Which column holds the business name?'
-      : 'Which column holds the website URL?';
+    : addressStep === 'website'
+      ? 'Which column holds the website URL?'
+      : 'Which column holds the business name?';
   const confirmLabel = busy
     ? 'Loading…'
     : isAddress
-      ? addressStep === 'name'
+      ? addressStep === 'website'
         ? 'Continue →'
         : 'Confirm columns'
       : 'Confirm column';
@@ -138,7 +140,7 @@ export function N2ColumnMapper() {
               marginTop: 8,
             }}
           >
-            Step {addressStep === 'name' ? 1 : 2} of 2
+            Step {addressStep === 'website' ? 1 : 2} of 2
           </div>
         )}
         <div
