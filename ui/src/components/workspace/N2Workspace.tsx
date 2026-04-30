@@ -4,6 +4,7 @@ import { useStore } from '../../store';
 import { downloadUrl } from '../../api';
 import { resetActive } from '../../lib/actions';
 import { N2Table } from './N2Table';
+import { N2AddressTable } from './N2AddressTable';
 import { N2Detail } from './N2Detail';
 import { N2EmptyHero } from './N2EmptyHero';
 import { N2ErrorView } from './N2ErrorView';
@@ -233,6 +234,7 @@ function GhostButton({ label, title, onClick, disabled = false }: GhostButtonPro
 }
 
 export function N2Workspace({ view }: { view: AppState }) {
+  const activeKind = useStore((s) => s.active);
   const dryRun = useStore((s) => s[s.active].dryRun);
   const dryRunLoading = useStore((s) => s[s.active].dryRunLoading);
   const showDryRun = (dryRun != null || dryRunLoading) && view !== 'empty' && view !== 'error';
@@ -260,7 +262,10 @@ export function N2Workspace({ view }: { view: AppState }) {
           // running / done / cancelled / indexed → table.
           // 'cancelled' especially: the user pressed Cancel; their cleaned
           // rows are right there, the sidebar offers Continue cleaning.
-          <div style={{ height: '100%', overflow: 'auto' }}><N2Table view={view} /></div>
+          // Address kind has a multi-field row shape; uses a separate table.
+          <div style={{ height: '100%', overflow: 'auto' }}>
+            {activeKind === 'address' ? <N2AddressTable view={view} /> : <N2Table view={view} />}
+          </div>
         )}
       </div>
       {!showDryRun && view !== 'empty' && view !== 'awaiting_column' && view !== 'error' && (
