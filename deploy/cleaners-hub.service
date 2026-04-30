@@ -25,11 +25,16 @@ Environment=CLEANERS_HUB_DATA_DIR=/var/lib/cleaners-hub
 Environment=CLEANERS_HUB_SESSIONS_DIR=/var/tmp/cleaners-hub/sessions
 # Credentials are decrypted into /run/credentials/cleaners-hub.service/<name>
 # at unit start; we expose them to the app via the same env names the Python
-# code already looks at (XAI_API_KEY_FILE, RESEND_API_KEY_FILE).
+# code already looks at (XAI_API_KEY_FILE, RESEND_API_KEY_FILE,
+# OPENROUTER_API_KEY_FILE).
+#
+# Plant openrouter-api-key via /home/kianna/install-openrouter-creds.sh.
 LoadCredentialEncrypted=xai-api-key:/etc/credstore.encrypted/xai-api-key
 LoadCredentialEncrypted=resend-api-key:/etc/credstore.encrypted/resend-api-key
+LoadCredentialEncrypted=openrouter-api-key:/etc/credstore.encrypted/openrouter-api-key
 Environment=XAI_API_KEY_FILE=%d/xai-api-key
 Environment=RESEND_API_KEY_FILE=%d/resend-api-key
+Environment=OPENROUTER_API_KEY_FILE=%d/openrouter-api-key
 
 ExecStart=/var/www/dashboard/apps/cleaners-hub/deploy/start.sh
 Restart=on-failure
