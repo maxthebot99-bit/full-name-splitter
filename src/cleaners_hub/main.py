@@ -588,7 +588,11 @@ async def start_run(
     except Exception as e:
         _log.warning("alert run_started failed: %r", e)
 
-    spawn_run(sess, column=body.column, row_limit=body.rowLimit, spend=_spend)
+    # For address kind, body.secondary_column carries the business-name column.
+    spawn_run(
+        sess, column=body.column, row_limit=body.rowLimit,
+        spend=_spend, secondary_column=body.secondary_column,
+    )
     return session_public_dict(sess)
 
 
