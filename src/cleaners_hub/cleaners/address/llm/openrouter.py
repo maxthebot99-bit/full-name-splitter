@@ -145,10 +145,18 @@ class OpenRouterLlamaProvider:
         # Pricing for Llama 3.1 8B Instruct on OpenRouter (per 1M tokens).
         self._cost_in_per_1k = 0.00002   # $0.02 / 1M
         self._cost_out_per_1k = 0.00005  # $0.05 / 1M
-        # Session-level usage accumulators.
+        # Session-level usage accumulators. Mirror the fields in reset_usage().
+        # OpenRouter's authoritative billing — sum of usage.cost across calls
+        # — is used preferentially over the locally-computed token×rate cost
+        # when available so the cleaners-hub sidebar matches the OpenRouter
+        # dashboard exactly (no drift from upstream pricing tweaks or
+        # cached-token discounts).
         self.prompt_tokens_total = 0
         self.completion_tokens_total = 0
+        self.cached_prompt_tokens_total = 0
         self.api_calls = 0
+        self.actual_cost_total = 0.0
+        self.has_actual_cost = False
 
     def reset_usage(self) -> None:
         self.prompt_tokens_total = 0
