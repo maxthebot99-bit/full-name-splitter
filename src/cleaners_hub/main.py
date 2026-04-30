@@ -497,13 +497,20 @@ async def list_columns(request: Request, sid: str = PathParam(...)) -> dict:
     ]
     suggested = _suggest_column(sess.kind, list(meta.columns))
     sess.columns = cols_payload
-    return {
+    body: dict = {
         "sid": sess.sid,
         "kind": sess.kind,
         "columns": cols_payload,
         "row_count_estimate": meta.row_count_estimate,
         "suggested": suggested,
     }
+    # Address kind needs TWO column suggestions — add a paired hint so the
+    # frontend column-picker can pre-populate both dropdowns. Company/name
+    # don't get this field; the frontend ignores it for those kinds.
+    if sess.kind == "address":
+        name_col, website_col = _suggest_address_columns(list(meta.columns))
+        body["suggested_pair"] = {"name": name_col, "website": website_col}
+    return body
 
 
 @app.post("/api/dry-run/{sid}")
@@ -879,6 +886,9 @@ async def download_past_run(request: Request, run_id: str = PathParam(...)):
 @app.get("/api/settings")
 @limiter.limit("60/minute")
 async def get_settings(request: Request) -> dict:
+    from cleaners_hub.settings_store import (
+        ALLOWED_MODELS_OPENROUTER as _ALLOWED_OPENROUTER,
+    )
     s = app_settings().get()
     return {
         **s.to_dict(),
@@ -886,8 +896,11 @@ async def get_settings(request: Request) -> dict:
         "hard_cap_usd": float(SPEND_CAP_USD_PER_DAY),
         "min_batch_size": MIN_BATCH_SIZE,
         "max_batch_size": MAX_BATCH_SIZE,
+        "min_batch_size_address": MIN_BATCH_SIZE_ADDRESS,
+        "max_batch_size_address": MAX_BATCH_SIZE_ADDRESS,
         "min_daily_cap_usd": MIN_DAILY_CAP_USD,
         "allowed_models": list(ALLOWED_MODELS),
+        "allowed_models_address": list(_ALLOWED_OPENROUTER),
     }
 
 
