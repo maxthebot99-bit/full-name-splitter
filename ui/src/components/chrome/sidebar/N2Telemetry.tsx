@@ -29,12 +29,15 @@ export function N2Telemetry({ view }: { view: AppState }) {
     active: view === 'running',
   });
 
+  const perRowCost = processedSnap > 0 ? live.costUsd / processedSnap : 0;
+
   const cells: [string, string, string][] = [
     ['Tokens in', fmtK(live.tokensIn), N2.text],
     ['Tokens out', fmtK(live.tokensOut), N2.text],
     ['Nulls', fmtInt(t.nullCount), N2.rose],
     ['API calls', fmtInt(t.rulesFired), N2.text],
     ['Cost', fmtCost(live.costUsd), N2.accent],
+    ['$/row', fmtCost(perRowCost), N2.accent],
   ];
 
   return (
