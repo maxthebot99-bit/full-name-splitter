@@ -158,6 +158,24 @@ function freshSlice(kind: Kind): KindSlice {
   };
 }
 
+/**
+ * Count of rows the backend has finished processing for this slice.
+ *
+ * Company/name slices read from `rows` (Row.status !== 'pending').
+ * Address slice reads from `addressRows` and counts anything that has
+ * landed in any terminal status (extracted / blank / foreign / fetch_failed).
+ *
+ * Use this anywhere the sidebar / progress / telemetry needs "how many
+ * rows are done" — works uniformly across all kinds.
+ */
+export function processedRowCount(slice: KindSlice): number {
+  if (slice.kind === 'address') {
+    return slice.addressRows.length;
+  }
+  return slice.rows.filter((r) => r.status !== 'pending').length;
+}
+
+
 // Map (runState + slice presence) → Nocturne AppState for view conditionals.
 export function viewState(slice: KindSlice): AppState {
   if (slice.runState === 'running') return 'running';

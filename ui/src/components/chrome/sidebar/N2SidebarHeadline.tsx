@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { N2, fSerif } from '../../../theme';
 import type { AppState, Kind } from '../../../types';
-import { useStore } from '../../../store';
+import { useStore, processedRowCount } from '../../../store';
 import {
   N2Thinking,
   PHRASES_COMPANY,
@@ -83,7 +83,7 @@ function contentFor(
 export function N2SidebarHeadline({ view }: { view: AppState }) {
   const slice = useStore((s) => s[s.active]);
   const total = slice.file?.rows ?? 0;
-  const partialCleaned = slice.rows.filter((r) => r.status !== 'pending').length;
+  const partialCleaned = processedRowCount(slice);
   const inFlight = slice.rowsInFlight;
   const phrases = slice.kind === 'company' ? PHRASES_COMPANY : PHRASES_NAME;
 
