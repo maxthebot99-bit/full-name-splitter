@@ -1,7 +1,7 @@
 import { useState, type CSSProperties } from 'react';
 import { N2, fSerif, fMono } from '../../theme';
 import { N2Chip } from '../atoms/N2Chip';
-import type { AppState, Row } from '../../types';
+import type { AppState, Kind, Row } from '../../types';
 import { useStore } from '../../store';
 import { overrideRow, rerunRow } from '../../lib/actions';
 
@@ -15,6 +15,12 @@ export function N2Table({ view }: { view: AppState }) {
   const slice = useStore((s) => s[s.active]);
   const selectRow = useStore((s) => s.selectRow);
   const isStreaming = view === 'running';
+  // The address tab renders via a dedicated multi-field table component.
+  // For now this single-column table is a no-op when active === 'address'.
+  if (slice.kind === 'address') {
+    return null;
+  }
+  const sliceKind = slice.kind as Exclude<Kind, 'address'>;
   const filtered = slice.rows.filter(
     (r) => slice.filter === 'all' || r.status === slice.filter,
   );
@@ -74,7 +80,7 @@ export function N2Table({ view }: { view: AppState }) {
             <TableRow
               key={r.n}
               row={r}
-              kind={slice.kind}
+              kind={sliceKind}
               selected={isSel}
               justArrived={justArrived}
               isStreaming={isStreaming}
@@ -137,7 +143,9 @@ export function N2Table({ view }: { view: AppState }) {
 
 interface RowProps {
   row: Row;
-  kind: 'company' | 'name';
+  // Address kind has its own table component; this one only handles
+  // single-string-output rows from the company/name pipelines.
+  kind: Exclude<Kind, 'address'>;
   selected: boolean;
   justArrived: boolean;
   isStreaming: boolean;

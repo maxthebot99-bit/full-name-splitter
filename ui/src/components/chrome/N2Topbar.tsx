@@ -115,7 +115,8 @@ export function N2Topbar({ view }: Props) {
           }}
         >
           <SegBtn label="Companies" kind="company" active={active} onSelect={setActive} />
-          <SegBtn label="First Names" kind="name" active={active} onSelect={setActive} last />
+          <SegBtn label="First Names" kind="name" active={active} onSelect={setActive} />
+          <SegBtn label="Addresses" kind="address" active={active} onSelect={setActive} last />
         </div>
       </div>
 
