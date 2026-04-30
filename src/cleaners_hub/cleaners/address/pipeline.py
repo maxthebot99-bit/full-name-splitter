@@ -145,48 +145,27 @@ async def _route_rows_async(
     fetch_sem = asyncio.Semaphore(settings.fetch_concurrency)
     llm_sem = asyncio.Semaphore(settings.llm_concurrency)
 
-    # Process in batches so we can stream progress and let the worker
-    # check cancel_cb between groups (matching company/name cadence).
+    # Stream per-row completions to the SSE pipe so progress / rows /
+    # tokens / cost update live, instead of waiting for a whole batch
+    # to finish (the gather-then-flush pattern made the address tab feel
+    # like it jumped 0% -> 100% with default batch_size=100).
     batch_size = max(1, settings.batch_size)
     indices = list(results.keys())
     done = 0
 
-    for batch_start in range(0, len(indices), batch_size):
-        if cancel_cb and cancel_cb():
-            break
-        batch_indices = indices[batch_start : batch_start + batch_size]
-        tasks = [
-            _process_one(
+    async def _run_one(i: int) -> tuple[int, AddressContext]:
+        try:
+            ctx = await _process_one(
                 results[i], provider, settings, fetch_sem, llm_sem
             )
-            for i in batch_indices
-        ]
-        batch_done: list[tuple[int, AddressContext]] = []
-        try:
-            updated_ctxs = await asyncio.gather(*tasks, return_exceptions=False)
         except Exception as e:
-            log(f"batch error: {e!r}")
-            for i in batch_indices:
-                results[i].error = "LLM_UNAVAILABLE"
-                results[i].flag("LLM_UNAVAILABLE")
-                batch_done.append((i, results[i]))
-        else:
-            for ctx, i in zip(updated_ctxs, batch_indices):
-                results[i] = ctx
-                if ctx.error == "FOREIGN":
-                    stats.foreign_rows += 1
-                elif ctx.error in (
-                    "CLOUDFLARE", "SITE_BROKEN", "DEAD_DOMAIN",
-                    "TLS_ERROR", "NO_RESPONSE",
-                ):
-                    stats.fetch_failed_rows += 1
-                elif ctx.has_address():
-                    stats.extracted_rows += 1
-                else:
-                    stats.null_rows += 1
-                batch_done.append((i, ctx))
+            log(f"row {i} crashed: {e!r}")
+            ctx = results[i]
+            ctx.error = "LLM_UNAVAILABLE"
+            ctx.flag("LLM_UNAVAILABLE")
+        return i, ctx
 
-        done += len(batch_indices)
+    def _refresh_usage() -> None:
         if hasattr(provider, "running_usage"):
             try:
                 usage = provider.running_usage()
@@ -197,10 +176,39 @@ async def _route_rows_async(
             except Exception as e:
                 log(f"usage capture failed: {e!r}")
 
-        if progress_cb:
-            progress_cb(min(done, stats.total), stats.total)
-        if batch_cb and batch_done:
-            batch_cb(batch_done, stats)
+    cancelled = False
+    for batch_start in range(0, len(indices), batch_size):
+        if cancelled or (cancel_cb and cancel_cb()):
+            break
+        batch_indices = indices[batch_start : batch_start + batch_size]
+        tasks = [asyncio.create_task(_run_one(i)) for i in batch_indices]
+
+        for fut in asyncio.as_completed(tasks):
+            if cancel_cb and cancel_cb():
+                for t in tasks:
+                    if not t.done():
+                        t.cancel()
+                cancelled = True
+                break
+            i, ctx = await fut
+            results[i] = ctx
+            if ctx.error == "FOREIGN":
+                stats.foreign_rows += 1
+            elif ctx.error in (
+                "CLOUDFLARE", "SITE_BROKEN", "DEAD_DOMAIN",
+                "TLS_ERROR", "NO_RESPONSE",
+            ):
+                stats.fetch_failed_rows += 1
+            elif ctx.has_address():
+                stats.extracted_rows += 1
+            else:
+                stats.null_rows += 1
+            done += 1
+            _refresh_usage()
+            if progress_cb:
+                progress_cb(min(done, stats.total), stats.total)
+            if batch_cb:
+                batch_cb([(i, ctx)], stats)
 
     ordered = [results[i] for i, *_ in rows]
     return ordered, stats
