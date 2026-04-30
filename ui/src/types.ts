@@ -1,4 +1,4 @@
-export type Kind = 'company' | 'name';
+export type Kind = 'company' | 'name' | 'address';
 
 // Backend session.state values that come down the SSE stream.
 export type RunState =
@@ -34,6 +34,36 @@ export interface Row {
   route?: string | null;
 }
 
+// Address tab — different row shape than company/name. Two inputs
+// (business_name + website_url), seven structured outputs, plus a
+// status/error tag. Streamed from the backend via _address_ctx_to_row.
+export type AddressRowStatus = 'extracted' | 'blank' | 'foreign' | 'fetch_failed';
+export type AddressErrorTag =
+  | ''
+  | 'FOREIGN'
+  | 'CLOUDFLARE'
+  | 'SITE_BROKEN'
+  | 'DEAD_DOMAIN'
+  | 'TLS_ERROR'
+  | 'NO_RESPONSE'
+  | 'LLM_UNAVAILABLE';
+
+export interface AddressRow {
+  n: number;
+  business_name: string;
+  website_url: string;
+  street: string;
+  city: string;
+  state: string;
+  zip: string;
+  country: string;
+  source_url: string;
+  confidence: number;
+  error: AddressErrorTag;
+  status: AddressRowStatus;
+  flags?: string[];
+}
+
 // Single column from /api/columns — includes server-side samples.
 export interface ColumnInfo {
   name: string;
@@ -46,6 +76,9 @@ export interface ColumnsResponse {
   columns: ColumnInfo[];
   row_count_estimate: number;
   suggested: string | null;
+  // Address kind only — when present, suggested_pair carries both
+  // pre-selected columns (business name + website URL).
+  suggested_pair?: { name: string | null; website: string | null } | null;
 }
 
 // /api/dry-run cost-pre-check (NOT the dry-run-sample — that's below).
@@ -121,22 +154,29 @@ export interface AppSettings {
   daily_cap_usd: number;
   batch_size_company: number;
   batch_size_name: number;
+  batch_size_address: number;
   model_company: string;
   model_name: string;
+  model_address: string;
   is_admin: boolean;
   hard_cap_usd: number;
   min_batch_size: number;
   max_batch_size: number;
+  min_batch_size_address?: number;
+  max_batch_size_address?: number;
   min_daily_cap_usd: number;
   allowed_models: string[];
+  allowed_models_address?: string[];
 }
 
 export type AppSettingsPatch = Partial<{
   daily_cap_usd: number;
   batch_size_company: number;
   batch_size_name: number;
+  batch_size_address: number;
   model_company: string;
   model_name: string;
+  model_address: string;
 }>;
 
 // Derived from upload + columns.
@@ -145,6 +185,9 @@ export interface FileMeta {
   rows: number;
   encoding: string;       // not surfaced by backend; stays as 'utf-8' placeholder
   column: string;         // currently selected column (may be empty pre-pick)
+  // Address kind only — secondary column (business-name) when kind="address".
+  // The primary `column` field stores the website URL column.
+  secondary_column?: string;
   columns?: string[];
 }
 
@@ -163,6 +206,13 @@ export interface Telemetry {
   nullCount: number;
   rulesFired: number;
   costUsd: number;
+  // Address-tab additions — populated only when kind="address". These
+  // come from _address_stats_to_telemetry on the backend. Optional so
+  // company/name don't have to set them.
+  extractedCount?: number;
+  blankCount?: number;
+  foreignCount?: number;
+  fetchFailedCount?: number;
 }
 
 export interface UiError {

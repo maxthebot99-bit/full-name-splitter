@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { N2, fMono } from '../../theme';
 import type { AppState } from '../../types';
-import { useStore } from '../../store';
+import { useStore, processedRowCount } from '../../store';
 import {
   beginCleaningWithCostCheck,
   cancelRun,
@@ -29,7 +29,7 @@ export function N2Sidebar({ view }: { view: AppState }) {
   // all of them. The CTA relabels to "Continue cleaning" and its cost
   // estimate covers only the rows that are still pending.
   const totalRows = file?.rows ?? 0;
-  const cleanedCount = slice.rows.filter((r) => r.status !== 'pending').length;
+  const cleanedCount = processedRowCount(slice);
   const isPartial = cleanedCount > 0 && cleanedCount < totalRows;
   const inFlight = slice.rowsInFlight.length > 0;
   const pendingCount = isPartial

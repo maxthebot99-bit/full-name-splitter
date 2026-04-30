@@ -69,7 +69,9 @@ from cleaners_hub.sessions import (
 from cleaners_hub.settings_store import (
     ALLOWED_MODELS,
     MAX_BATCH_SIZE,
+    MAX_BATCH_SIZE_ADDRESS,
     MIN_BATCH_SIZE,
+    MIN_BATCH_SIZE_ADDRESS,
     MIN_DAILY_CAP_USD,
     settings as app_settings,
 )
@@ -86,7 +88,7 @@ from cleaners_hub.workers import (
 
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
 ALLOWED_EXTENSIONS = {".xlsx", ".csv"}
-ALLOWED_KINDS = {"company", "name"}
+ALLOWED_KINDS = {"company", "name", "address"}
 EST_USD_PER_ROW = Decimal("0.000011")  # observed: ~$0.0081 / 748 rows on Grok-4-fast (2026-04-27)
 
 # Emails allowed to PUT /api/settings + see other users' run history.
@@ -162,21 +164,61 @@ def _suggest_column(kind: str, columns: list[str]) -> str | None:
                     return c
         return None
 
-    # kind == "name"
-    for h in name_strong:
-        for c, low in lowered:
-            if low == h:
-                return c
-    for h in name_strong:
-        for c, low in lowered:
-            if h in low:
-                return c
-    # Weak: avoid "first" matching a column that's clearly a company.
-    for h in name_weak:
-        for c, low in lowered:
-            if h in low and not looks_like_company(low):
-                return c
+    if kind == "name":
+        for h in name_strong:
+            for c, low in lowered:
+                if low == h:
+                    return c
+        for h in name_strong:
+            for c, low in lowered:
+                if h in low:
+                    return c
+        # Weak: avoid "first" matching a column that's clearly a company.
+        for h in name_weak:
+            for c, low in lowered:
+                if h in low and not looks_like_company(low):
+                    return c
+        return None
+
+    # kind == "address" — single-column suggestion picks the website column.
+    # The actual two-column suggestion lives in _suggest_address_columns().
+    if kind == "address":
+        pair = _suggest_address_columns(columns)
+        return pair[1]  # website column is the "primary" input
     return None
+
+
+def _suggest_address_columns(columns: list[str]) -> tuple[str | None, str | None]:
+    """Pick (business_name_column, website_url_column) from a CSV's headers.
+
+    Address is the only kind that needs TWO input columns. Returns a pair so
+    the upload UI can pre-populate both pickers.
+    """
+    name_strong = ["company name", "company_name", "companyname",
+                   "business name", "business_name", "businessname",
+                   "account name", "account_name", "accountname",
+                   "organization", "organisation", "name"]
+    website_strong = ["company website", "company_website", "companywebsite",
+                      "website url", "website_url", "websiteurl",
+                      "website", "domain", "company_domain", "company domain",
+                      "url", "site", "homepage", "web"]
+
+    lowered = [(c, c.lower().strip()) for c in columns if c]
+
+    def find(strong: list[str]) -> str | None:
+        # Exact match first.
+        for h in strong:
+            for c, low in lowered:
+                if low == h:
+                    return c
+        # Substring match.
+        for h in strong:
+            for c, low in lowered:
+                if h in low:
+                    return c
+        return None
+
+    return find(name_strong), find(website_strong)
 
 
 # ─── Lifespan ───────────────────────────────────────────────────────────────
@@ -290,16 +332,21 @@ def _safe_500(action: str, exc: Exception) -> HTTPException:
 
 class RunBody(BaseModel):
     column: str = Field(..., min_length=1, max_length=200)
+    # Address kind only: the second input column (website URL). Company/name
+    # ignore this. Optional so existing single-column callers keep working.
+    secondary_column: str | None = Field(None, min_length=1, max_length=200)
     rowLimit: int | None = Field(None, ge=1, le=1_000_000)
 
 
 class DryRunSampleBody(BaseModel):
     column: str = Field(..., min_length=1, max_length=200)
+    secondary_column: str | None = Field(None, min_length=1, max_length=200)
     count: int = Field(25, ge=1, le=100)
 
 
 class PreviewBody(BaseModel):
     column: str = Field(..., min_length=1, max_length=200)
+    secondary_column: str | None = Field(None, min_length=1, max_length=200)
     count: int = Field(200, ge=1, le=500)
 
 
@@ -315,8 +362,12 @@ class SettingsPatch(BaseModel):
     daily_cap_usd: float | None = Field(None, ge=0, le=float(SPEND_CAP_USD_PER_DAY))
     batch_size_company: int | None = Field(None, ge=MIN_BATCH_SIZE, le=MAX_BATCH_SIZE)
     batch_size_name: int | None = Field(None, ge=MIN_BATCH_SIZE, le=MAX_BATCH_SIZE)
+    batch_size_address: int | None = Field(
+        None, ge=MIN_BATCH_SIZE_ADDRESS, le=MAX_BATCH_SIZE_ADDRESS
+    )
     model_company: str | None = None
     model_name: str | None = None
+    model_address: str | None = None
 
 
 # ─── Routes ─────────────────────────────────────────────────────────────────
@@ -446,13 +497,20 @@ async def list_columns(request: Request, sid: str = PathParam(...)) -> dict:
     ]
     suggested = _suggest_column(sess.kind, list(meta.columns))
     sess.columns = cols_payload
-    return {
+    body: dict = {
         "sid": sess.sid,
         "kind": sess.kind,
         "columns": cols_payload,
         "row_count_estimate": meta.row_count_estimate,
         "suggested": suggested,
     }
+    # Address kind needs TWO column suggestions — add a paired hint so the
+    # frontend column-picker can pre-populate both dropdowns. Company/name
+    # don't get this field; the frontend ignores it for those kinds.
+    if sess.kind == "address":
+        name_col, website_col = _suggest_address_columns(list(meta.columns))
+        body["suggested_pair"] = {"name": name_col, "website": website_col}
+    return body
 
 
 @app.post("/api/dry-run/{sid}")
@@ -537,7 +595,11 @@ async def start_run(
     except Exception as e:
         _log.warning("alert run_started failed: %r", e)
 
-    spawn_run(sess, column=body.column, row_limit=body.rowLimit, spend=_spend)
+    # For address kind, body.secondary_column carries the business-name column.
+    spawn_run(
+        sess, column=body.column, row_limit=body.rowLimit,
+        spend=_spend, secondary_column=body.secondary_column,
+    )
     return session_public_dict(sess)
 
 
@@ -824,6 +886,9 @@ async def download_past_run(request: Request, run_id: str = PathParam(...)):
 @app.get("/api/settings")
 @limiter.limit("60/minute")
 async def get_settings(request: Request) -> dict:
+    from cleaners_hub.settings_store import (
+        ALLOWED_MODELS_OPENROUTER as _ALLOWED_OPENROUTER,
+    )
     s = app_settings().get()
     return {
         **s.to_dict(),
@@ -831,8 +896,11 @@ async def get_settings(request: Request) -> dict:
         "hard_cap_usd": float(SPEND_CAP_USD_PER_DAY),
         "min_batch_size": MIN_BATCH_SIZE,
         "max_batch_size": MAX_BATCH_SIZE,
+        "min_batch_size_address": MIN_BATCH_SIZE_ADDRESS,
+        "max_batch_size_address": MAX_BATCH_SIZE_ADDRESS,
         "min_daily_cap_usd": MIN_DAILY_CAP_USD,
         "allowed_models": list(ALLOWED_MODELS),
+        "allowed_models_address": list(_ALLOWED_OPENROUTER),
     }
 
 

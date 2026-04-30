@@ -38,6 +38,11 @@ def get_xai_key() -> str:
     return _read_credential_file("XAI_API_KEY_FILE")
 
 
+def get_openrouter_key() -> str:
+    """Return the OpenRouter API key (used by the Address tab). Raises if unavailable."""
+    return _read_credential_file("OPENROUTER_API_KEY_FILE")
+
+
 def get_resend_key() -> str | None:
     """Return the Resend API key, or None if not configured (alerts disabled).
 
@@ -56,10 +61,15 @@ def get_resend_key() -> str | None:
 
 
 def get_key(provider: str) -> str | None:
-    """Back-compat shim for vendored llm/xai.py code which calls get_key('xai')."""
+    """Back-compat shim for vendored llm code: provider == 'xai' or 'openrouter'."""
     if provider == "xai":
         try:
             return get_xai_key()
+        except RuntimeError:
+            return None
+    if provider == "openrouter":
+        try:
+            return get_openrouter_key()
         except RuntimeError:
             return None
     return None

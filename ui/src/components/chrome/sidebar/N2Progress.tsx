@@ -3,7 +3,7 @@ import { N2Label } from '../../atoms/N2Label';
 import { N2Number } from '../../atoms/N2Number';
 import { useLiveTelemetry } from '../../../hooks';
 import type { AppState } from '../../../types';
-import { useStore } from '../../../store';
+import { useStore, processedRowCount } from '../../../store';
 
 function fmtHms(s: number): string {
   const m = Math.floor(s / 60);
@@ -19,7 +19,7 @@ export function N2Progress({ view }: { view: AppState }) {
   // doesn't fire, so derive from the rows[] array directly so the
   // percentage reflects what's actually cleaned.
   const total = slice.file?.rows ?? slice.progress.total;
-  const cleanedFromRows = slice.rows.filter((r) => r.status !== 'pending').length;
+  const cleanedFromRows = processedRowCount(slice);
   const processedSnapshot = view === 'running'
     ? Math.max(slice.progress.processed, cleanedFromRows)
     : cleanedFromRows;

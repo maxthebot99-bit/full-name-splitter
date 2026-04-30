@@ -4,7 +4,7 @@ import { N2Number } from '../../atoms/N2Number';
 import { N2Spark } from '../../atoms/N2Spark';
 import { useLiveTelemetry } from '../../../hooks';
 import type { AppState } from '../../../types';
-import { useStore } from '../../../store';
+import { useStore, processedRowCount } from '../../../store';
 import { SPARKLINE } from '../../../utils/fixtures';
 import { fmtCost, fmtInt, fmtK } from '../../../utils/format';
 
@@ -17,7 +17,7 @@ export function N2Telemetry({ view }: { view: AppState }) {
   // averages from the snapshot. Snaps to truth when the next telemetry
   // event lands.
   const total = slice.file?.rows ?? 0;
-  const processedSnap = slice.rows.filter((r) => r.status !== 'pending').length;
+  const processedSnap = processedRowCount(slice);
   const live = useLiveTelemetry({
     processed: processedSnap,
     total,
