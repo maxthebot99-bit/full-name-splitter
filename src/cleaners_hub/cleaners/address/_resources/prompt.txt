@@ -27,6 +27,14 @@ Rules:
 - source_url should be the URL of the page where the address appeared (the user message will tell you which pages were fetched). If no address was found, set source_url to null.
 - SCOPE: We only ship addresses for businesses in the US, Canada, or US territories (PR, GU, VI, AS, MP). For businesses outside that list (Mexico, India, UK, Peru, etc.): set street/city/state/zip/source_url to null AND confidence to 0.0, BUT still fill in the country field with the actual ISO code (e.g. "PE", "IN", "GB"). This lets the downstream system flag the row.
 - Country: ALWAYS fill country with an ISO code when one can be determined from the address. Use "US", "CA", "PR", "GU", "VI", "AS", "MP" for in-scope; use the real ISO code (e.g. "MX", "PE", "IN", "GB") for out-of-scope so the row can be flagged. Normalize "USA"/"United States" to "US".
+- COUNTRY DETECTION HINTS — use these signals to identify out-of-scope businesses even when no explicit "Country: X" appears in the page:
+  * UK / GB: ".co.uk" or ".uk" domain; "+44" phone numbers; "Ltd" / "Limited" / "LLP" company suffix; "VAT" registration; UK postcodes like "SW1A 1AA", "EC2M 6XB", "M1 1AA"; "London" / "Manchester" / "Edinburgh" / "Glasgow" mentions.
+  * India / IN: "Pvt Ltd" / "Private Limited" suffix; ".in" domain; "+91" phone; PIN codes (6 digits); cities like "Mumbai", "Delhi", "Bangalore", "Hyderabad", "Pune", "Chennai", "Kolkata".
+  * Mexico / MX: ".mx" domain; "+52" phone; "S.A. de C.V." suffix; cities like "Mexico City", "Guadalajara", "Monterrey".
+  * Australia / AU: ".com.au" domain; "+61" phone; "Pty Ltd" suffix; "Sydney", "Melbourne", "Brisbane", "Perth".
+  * Germany / DE: ".de" domain; "+49" phone; "GmbH" / "AG" suffix; postcodes (5 digits); "Berlin", "Hamburg", "Munich", "Frankfurt".
+  * France / FR: ".fr" domain; "+33" phone; "SARL" / "SAS" suffix; "Paris", "Lyon", "Marseille".
+  When you see ANY of these signals, set country to the appropriate ISO code (and the scope filter will null the address).
 - State: 2-letter US state codes ("CA", "NY") or 2-letter Canadian province codes ("ON", "BC", "QC").
 - Strip trailing punctuation from street/city.
 

@@ -101,14 +101,17 @@ function StatPill({ kind, count, label, active, disabled, onClick }: PillProps) 
 function N2WorkspaceHeader({ view }: { view: AppState }) {
   const slice = useStore((s) => s[s.active]);
   const setFilter = useStore((s) => s.setFilter);
-  const rows = slice.rows;
   const file = slice.file;
 
   const isEmpty = view === 'empty' || view === 'awaiting_column';
-  const changedCount = rows.filter((r) => r.status === 'changed').length;
-  const unchangedCount = rows.filter((r) => r.status === 'unchanged').length;
-  const nullCount = rows.filter((r) => r.status === 'null').length;
-  const allCount = Math.max(rows.length, file?.rows ?? 0);
+  const isAddress = slice.kind === 'address';
+
+  // Counts depend on which row shape this slice carries.
+  const rows = slice.rows;
+  const addressRows = slice.addressRows;
+  const allCount = isAddress
+    ? Math.max(addressRows.length, file?.rows ?? 0)
+    : Math.max(rows.length, file?.rows ?? 0);
 
   return (
     <div
@@ -130,30 +133,69 @@ function N2WorkspaceHeader({ view }: { view: AppState }) {
         disabled={isEmpty}
         onClick={() => setFilter(slice.kind, 'all')}
       />
-      <StatPill
-        kind="changed"
-        count={isEmpty ? null : changedCount}
-        label="changed"
-        active={slice.filter === 'changed'}
-        disabled={isEmpty}
-        onClick={() => setFilter(slice.kind, 'changed')}
-      />
-      <StatPill
-        kind="unchanged"
-        count={isEmpty ? null : unchangedCount}
-        label="unchanged"
-        active={slice.filter === 'unchanged'}
-        disabled={isEmpty}
-        onClick={() => setFilter(slice.kind, 'unchanged')}
-      />
-      <StatPill
-        kind="null"
-        count={isEmpty ? null : nullCount}
-        label="null"
-        active={slice.filter === 'null'}
-        disabled={isEmpty}
-        onClick={() => setFilter(slice.kind, 'null')}
-      />
+      {isAddress ? (
+        <>
+          <StatPill
+            kind="changed"
+            count={isEmpty ? null : addressRows.filter((r) => r.status === 'extracted').length}
+            label="extracted"
+            active={slice.filter === 'extracted'}
+            disabled={isEmpty}
+            onClick={() => setFilter(slice.kind, 'extracted')}
+          />
+          <StatPill
+            kind="unchanged"
+            count={isEmpty ? null : addressRows.filter((r) => r.status === 'blank').length}
+            label="blank"
+            active={slice.filter === 'blank'}
+            disabled={isEmpty}
+            onClick={() => setFilter(slice.kind, 'blank')}
+          />
+          <StatPill
+            kind="null"
+            count={isEmpty ? null : addressRows.filter((r) => r.status === 'foreign').length}
+            label="foreign"
+            active={slice.filter === 'foreign'}
+            disabled={isEmpty}
+            onClick={() => setFilter(slice.kind, 'foreign')}
+          />
+          <StatPill
+            kind="null"
+            count={isEmpty ? null : addressRows.filter((r) => r.status === 'fetch_failed').length}
+            label="fetch fail"
+            active={slice.filter === 'fetch_failed'}
+            disabled={isEmpty}
+            onClick={() => setFilter(slice.kind, 'fetch_failed')}
+          />
+        </>
+      ) : (
+        <>
+          <StatPill
+            kind="changed"
+            count={isEmpty ? null : rows.filter((r) => r.status === 'changed').length}
+            label="changed"
+            active={slice.filter === 'changed'}
+            disabled={isEmpty}
+            onClick={() => setFilter(slice.kind, 'changed')}
+          />
+          <StatPill
+            kind="unchanged"
+            count={isEmpty ? null : rows.filter((r) => r.status === 'unchanged').length}
+            label="unchanged"
+            active={slice.filter === 'unchanged'}
+            disabled={isEmpty}
+            onClick={() => setFilter(slice.kind, 'unchanged')}
+          />
+          <StatPill
+            kind="null"
+            count={isEmpty ? null : rows.filter((r) => r.status === 'null').length}
+            label="null"
+            active={slice.filter === 'null'}
+            disabled={isEmpty}
+            onClick={() => setFilter(slice.kind, 'null')}
+          />
+        </>
+      )}
 
       <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
         <GhostButton

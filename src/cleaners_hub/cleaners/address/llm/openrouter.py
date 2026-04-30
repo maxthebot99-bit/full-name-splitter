@@ -153,9 +153,23 @@ class OpenRouterLlamaProvider:
     def reset_usage(self) -> None:
         self.prompt_tokens_total = 0
         self.completion_tokens_total = 0
+        self.cached_prompt_tokens_total = 0
         self.api_calls = 0
+        self.actual_cost_total = 0.0
+        self.has_actual_cost = False
+        # OpenRouter's authoritative billing — sum of usage.cost across calls.
+        # Used preferentially over the locally-computed token×rate cost when
+        # available so the cleaners-hub sidebar matches the OpenRouter dashboard
+        # exactly (no drift from upstream pricing tweaks or cached-token discounts).
+        self.actual_cost_total = 0.0
+        self.has_actual_cost = False
 
     def running_cost(self) -> float:
+        # Prefer OpenRouter's reported cost (matches what shows on their
+        # dashboard / what's deducted from credits). Fall back to a local
+        # computation if the response didn't include it.
+        if self.has_actual_cost:
+            return self.actual_cost_total
         return (
             (self.prompt_tokens_total / 1000.0) * self._cost_in_per_1k
             + (self.completion_tokens_total / 1000.0) * self._cost_out_per_1k
@@ -165,9 +179,34 @@ class OpenRouterLlamaProvider:
         return {
             "prompt_tokens": self.prompt_tokens_total,
             "completion_tokens": self.completion_tokens_total,
+            "cached_prompt_tokens": self.cached_prompt_tokens_total,
             "api_calls": self.api_calls,
             "cost": self.running_cost(),
         }
+
+    def _accumulate_usage(self, usage: dict) -> None:
+        """Roll one OpenRouter response's usage into the running totals.
+
+        OpenRouter returns:
+          prompt_tokens, completion_tokens, total_tokens
+          cost — actual USD billed (when usage.include=true is in request body)
+          prompt_tokens_details: { cached_tokens } — optional
+        """
+        if not isinstance(usage, dict):
+            return
+        self.prompt_tokens_total += int(usage.get("prompt_tokens") or 0)
+        self.completion_tokens_total += int(usage.get("completion_tokens") or 0)
+        details = usage.get("prompt_tokens_details") or {}
+        if isinstance(details, dict):
+            self.cached_prompt_tokens_total += int(details.get("cached_tokens") or 0)
+        cost = usage.get("cost")
+        if cost is not None:
+            try:
+                self.actual_cost_total += float(cost)
+                self.has_actual_cost = True
+            except (TypeError, ValueError):
+                pass
+        self.api_calls += 1
 
     def estimate_cost_per_row(self) -> float:
         # ~3,500 input tokens (cleaned HTML) + ~120 output (JSON). Empirical from pilot.
@@ -206,6 +245,10 @@ class OpenRouterLlamaProvider:
             "temperature": temperature,
             "max_tokens": 300,
             "response_format": {"type": "json_object"},
+            # Force OpenRouter to include billing-truth `cost` + cached-token
+            # details in the response so our sidebar's COST / TOKENS IN
+            # numbers match what their dashboard shows.
+            "usage": {"include": True},
         }
         headers = {
             "Authorization": f"Bearer {self._api_key}",
@@ -272,17 +315,13 @@ class OpenRouterLlamaProvider:
                 ctx.flag("LLM_UNAVAILABLE")
                 return ctx
 
-            self.prompt_tokens_total += int(usage.get("prompt_tokens") or 0)
-            self.completion_tokens_total += int(usage.get("completion_tokens") or 0)
-            self.api_calls += 1
+            self._accumulate_usage(usage)
 
             if parsed is None:
                 # JSON parse failure — retry once at temp 0.0.
                 try:
                     parsed, usage2 = await self._call(client, user_message, temperature=0.0)
-                    self.prompt_tokens_total += int(usage2.get("prompt_tokens") or 0)
-                    self.completion_tokens_total += int(usage2.get("completion_tokens") or 0)
-                    self.api_calls += 1
+                    self._accumulate_usage(usage2)
                 except Exception:
                     pass
 
@@ -297,9 +336,7 @@ class OpenRouterLlamaProvider:
                     retry_parsed, usage3 = await self._call(
                         client, user_message, temperature=0.0
                     )
-                    self.prompt_tokens_total += int(usage3.get("prompt_tokens") or 0)
-                    self.completion_tokens_total += int(usage3.get("completion_tokens") or 0)
-                    self.api_calls += 1
+                    self._accumulate_usage(usage3)
                     if retry_parsed and not _is_blank_extraction(retry_parsed):
                         parsed = retry_parsed
                 except Exception:

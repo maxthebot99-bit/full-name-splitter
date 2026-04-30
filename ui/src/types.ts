@@ -222,7 +222,15 @@ export interface UiError {
   lastRow: number;
 }
 
-export type FilterKind = 'all' | 'changed' | 'unchanged' | 'null';
+// Filter values used in the workspace header pills. The set is kind-aware:
+//   - company / name use: all | changed | unchanged | null
+//   - address uses:        all | extracted | blank | foreign | fetch_failed
+// Stored on the slice as a single union; the workspace header and tables
+// branch on the active kind to show / apply the right subset.
+export type FilterKind =
+  | 'all'
+  | 'changed' | 'unchanged' | 'null'
+  | 'extracted' | 'blank' | 'foreign' | 'fetch_failed';
 export type DryRunKind = 'changed' | 'same' | 'flag' | 'blank';
 
 // What the workspace renders during dry-run-sample. Rows are mapped from

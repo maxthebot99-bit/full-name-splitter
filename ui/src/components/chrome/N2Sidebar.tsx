@@ -83,7 +83,10 @@ export function N2Sidebar({ view }: { view: AppState }) {
               )
             }
           />
-          {view === 'indexed' && (
+          {view === 'indexed' && slice.kind !== 'address' && (
+            // The address pipeline doesn't have a dry-run-sample endpoint
+            // (each row is a fetch + LLM call, no batched sample shape).
+            // Hide the CTA to avoid showing a button that 404s.
             <N2TryDryRunCta onClick={() => runDryRun(file?.column ?? '', 25)} />
           )}
         </>

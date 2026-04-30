@@ -25,10 +25,14 @@ const th: CSSProperties = {
 };
 
 // Address-tab table — renders multi-field AddressRow rows. Used in place
-// of N2Table when slice.kind === "address".
+// of N2Table when slice.kind === "address". Filters via slice.filter on
+// the AddressRowStatus values ('extracted' | 'blank' | 'foreign' | 'fetch_failed').
 export function N2AddressTable({ view: _view }: { view: AppState }) {
   const slice = useStore((s) => s[s.active]);
-  const rows = slice.addressRows;
+  const allRows = slice.addressRows;
+  const rows = slice.filter === 'all'
+    ? allRows
+    : allRows.filter((r) => r.status === slice.filter);
 
   return (
     <table
