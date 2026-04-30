@@ -151,6 +151,8 @@ function StatusChip({ row }: { row: AddressRow }) {
     color = '#e57878';
   } else if (row.status === 'blank') {
     label = 'no address';
+  } else if (row.status === 'pending') {
+    label = 'queued';
   }
   return (
     <span

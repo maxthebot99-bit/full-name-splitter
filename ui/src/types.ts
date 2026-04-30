@@ -37,7 +37,7 @@ export interface Row {
 // Address tab — different row shape than company/name. Two inputs
 // (business_name + website_url), seven structured outputs, plus a
 // status/error tag. Streamed from the backend via _address_ctx_to_row.
-export type AddressRowStatus = 'extracted' | 'blank' | 'foreign' | 'fetch_failed';
+export type AddressRowStatus = 'pending' | 'extracted' | 'blank' | 'foreign' | 'fetch_failed';
 export type AddressErrorTag =
   | ''
   | 'FOREIGN'

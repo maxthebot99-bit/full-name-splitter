@@ -738,7 +738,7 @@ async def preview(
                 "source_url": "",
                 "confidence": 0.0,
                 "error": "",
-                "status": "blank",
+                "status": "pending",
                 "flags": [],
             }
             for i in range(len(vals))

@@ -163,14 +163,16 @@ function freshSlice(kind: Kind): KindSlice {
  *
  * Company/name slices read from `rows` (Row.status !== 'pending').
  * Address slice reads from `addressRows` and counts anything that has
- * landed in any terminal status (extracted / blank / foreign / fetch_failed).
+ * landed in a terminal status (extracted / blank / foreign / fetch_failed).
+ * Preview rows pre-populated before the run sit at status='pending' and
+ * must be excluded — otherwise the progress bar reads 100% from row 0.
  *
  * Use this anywhere the sidebar / progress / telemetry needs "how many
  * rows are done" — works uniformly across all kinds.
  */
 export function processedRowCount(slice: KindSlice): number {
   if (slice.kind === 'address') {
-    return slice.addressRows.length;
+    return slice.addressRows.filter((r) => r.status !== 'pending').length;
   }
   return slice.rows.filter((r) => r.status !== 'pending').length;
 }
@@ -394,7 +396,7 @@ export function handleSseEvent(kind: Kind, ev: SseEvent, expectedSid?: string): 
       const total = live.file?.rows ?? 0;
       // Count processed rows from whichever shape this kind uses.
       const processed = kind === 'address'
-        ? live.addressRows.filter((r) => r.status !== 'blank' || r.error !== '').length
+        ? live.addressRows.filter((r) => r.status !== 'pending').length
         : live.rows.filter((r) => r.status !== 'pending').length;
       const elapsedHint = (t as { elapsed_s?: number }).elapsed_s;
       s.setProgress(kind, {
