@@ -69,7 +69,9 @@ from cleaners_hub.sessions import (
 from cleaners_hub.settings_store import (
     ALLOWED_MODELS,
     MAX_BATCH_SIZE,
+    MAX_BATCH_SIZE_ADDRESS,
     MIN_BATCH_SIZE,
+    MIN_BATCH_SIZE_ADDRESS,
     MIN_DAILY_CAP_USD,
     settings as app_settings,
 )
@@ -330,16 +332,21 @@ def _safe_500(action: str, exc: Exception) -> HTTPException:
 
 class RunBody(BaseModel):
     column: str = Field(..., min_length=1, max_length=200)
+    # Address kind only: the second input column (website URL). Company/name
+    # ignore this. Optional so existing single-column callers keep working.
+    secondary_column: str | None = Field(None, min_length=1, max_length=200)
     rowLimit: int | None = Field(None, ge=1, le=1_000_000)
 
 
 class DryRunSampleBody(BaseModel):
     column: str = Field(..., min_length=1, max_length=200)
+    secondary_column: str | None = Field(None, min_length=1, max_length=200)
     count: int = Field(25, ge=1, le=100)
 
 
 class PreviewBody(BaseModel):
     column: str = Field(..., min_length=1, max_length=200)
+    secondary_column: str | None = Field(None, min_length=1, max_length=200)
     count: int = Field(200, ge=1, le=500)
 
 
@@ -355,8 +362,12 @@ class SettingsPatch(BaseModel):
     daily_cap_usd: float | None = Field(None, ge=0, le=float(SPEND_CAP_USD_PER_DAY))
     batch_size_company: int | None = Field(None, ge=MIN_BATCH_SIZE, le=MAX_BATCH_SIZE)
     batch_size_name: int | None = Field(None, ge=MIN_BATCH_SIZE, le=MAX_BATCH_SIZE)
+    batch_size_address: int | None = Field(
+        None, ge=MIN_BATCH_SIZE_ADDRESS, le=MAX_BATCH_SIZE_ADDRESS
+    )
     model_company: str | None = None
     model_name: str | None = None
+    model_address: str | None = None
 
 
 # ─── Routes ─────────────────────────────────────────────────────────────────
