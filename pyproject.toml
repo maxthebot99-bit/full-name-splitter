@@ -28,6 +28,11 @@ dependencies = [
     "tenacity>=8.3",
     "tiktoken>=0.7",
     "resend>=2.0",
+    # Address tab dependencies (added 2026-04-30):
+    "curl_cffi>=0.7",          # TLS-fingerprint impersonation for fetcher
+    "beautifulsoup4>=4.12",    # HTML parsing for address extraction
+    "lxml>=5.0",               # BeautifulSoup parser backend
+    "pydantic>=2.5",           # AddressResult schema validation in LLM provider
 ]
 
 [project.optional-dependencies]

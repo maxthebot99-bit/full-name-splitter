@@ -86,7 +86,7 @@ from cleaners_hub.workers import (
 
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
 ALLOWED_EXTENSIONS = {".xlsx", ".csv"}
-ALLOWED_KINDS = {"company", "name"}
+ALLOWED_KINDS = {"company", "name", "address"}
 EST_USD_PER_ROW = Decimal("0.000011")  # observed: ~$0.0081 / 748 rows on Grok-4-fast (2026-04-27)
 
 # Emails allowed to PUT /api/settings + see other users' run history.
@@ -162,21 +162,61 @@ def _suggest_column(kind: str, columns: list[str]) -> str | None:
                     return c
         return None
 
-    # kind == "name"
-    for h in name_strong:
-        for c, low in lowered:
-            if low == h:
-                return c
-    for h in name_strong:
-        for c, low in lowered:
-            if h in low:
-                return c
-    # Weak: avoid "first" matching a column that's clearly a company.
-    for h in name_weak:
-        for c, low in lowered:
-            if h in low and not looks_like_company(low):
-                return c
+    if kind == "name":
+        for h in name_strong:
+            for c, low in lowered:
+                if low == h:
+                    return c
+        for h in name_strong:
+            for c, low in lowered:
+                if h in low:
+                    return c
+        # Weak: avoid "first" matching a column that's clearly a company.
+        for h in name_weak:
+            for c, low in lowered:
+                if h in low and not looks_like_company(low):
+                    return c
+        return None
+
+    # kind == "address" — single-column suggestion picks the website column.
+    # The actual two-column suggestion lives in _suggest_address_columns().
+    if kind == "address":
+        pair = _suggest_address_columns(columns)
+        return pair[1]  # website column is the "primary" input
     return None
+
+
+def _suggest_address_columns(columns: list[str]) -> tuple[str | None, str | None]:
+    """Pick (business_name_column, website_url_column) from a CSV's headers.
+
+    Address is the only kind that needs TWO input columns. Returns a pair so
+    the upload UI can pre-populate both pickers.
+    """
+    name_strong = ["company name", "company_name", "companyname",
+                   "business name", "business_name", "businessname",
+                   "account name", "account_name", "accountname",
+                   "organization", "organisation", "name"]
+    website_strong = ["company website", "company_website", "companywebsite",
+                      "website url", "website_url", "websiteurl",
+                      "website", "domain", "company_domain", "company domain",
+                      "url", "site", "homepage", "web"]
+
+    lowered = [(c, c.lower().strip()) for c in columns if c]
+
+    def find(strong: list[str]) -> str | None:
+        # Exact match first.
+        for h in strong:
+            for c, low in lowered:
+                if low == h:
+                    return c
+        # Substring match.
+        for h in strong:
+            for c, low in lowered:
+                if h in low:
+                    return c
+        return None
+
+    return find(name_strong), find(website_strong)
 
 
 # ─── Lifespan ───────────────────────────────────────────────────────────────

@@ -23,16 +23,28 @@ from cleaners_hub.spend import SPEND_CAP_USD_PER_DAY, _data_dir
 
 _log = logging.getLogger("cleaners_hub.settings")
 
-# Allowed model strings (extend as xAI publishes new ones).
-ALLOWED_MODELS: tuple[str, ...] = (
+# Allowed model strings, per kind. Company/name use xAI Grok; address uses
+# OpenRouter Llama (different vendor, different cost structure, different
+# rate limits — keeping the allowed lists separate keeps validation honest).
+ALLOWED_MODELS_GROK: tuple[str, ...] = (
     "grok-4-fast-non-reasoning",
     "grok-4-fast-reasoning",
     "grok-4",
 )
+ALLOWED_MODELS_OPENROUTER: tuple[str, ...] = (
+    "meta-llama/llama-3.1-8b-instruct",
+)
+# Back-compat alias: existing callers expect ALLOWED_MODELS to be the Grok set.
+ALLOWED_MODELS = ALLOWED_MODELS_GROK
 
 # Bound values so a bad write can't lock us out or run us over.
 MIN_BATCH_SIZE = 50
 MAX_BATCH_SIZE = 500
+# Address batches need a smaller floor because each row fetches up to ~10
+# pages and runs ~3.5K input tokens through the LLM. 25 keeps wall-clock
+# checkpoints frequent without thrashing.
+MIN_BATCH_SIZE_ADDRESS = 25
+MAX_BATCH_SIZE_ADDRESS = 200
 MIN_DAILY_CAP_USD = 0.0  # 0 = block all runs (effectively a kill switch)
 
 
@@ -47,8 +59,12 @@ class AppSettings:
     # extra. Worth it. Admin can tune up to MAX_BATCH_SIZE in Settings.
     batch_size_company: int = 50
     batch_size_name: int = 50
+    # Address batches default lower because each row does HTML fetch + LLM
+    # extract; smaller batches give better progress granularity.
+    batch_size_address: int = 100
     model_company: str = "grok-4-fast-non-reasoning"
     model_name: str = "grok-4-fast-non-reasoning"
+    model_address: str = "meta-llama/llama-3.1-8b-instruct"
 
     def validate(self) -> "AppSettings":
         """Return a new instance with values clamped/normalized to safe bounds.
@@ -57,25 +73,40 @@ class AppSettings:
                                          float(SPEND_CAP_USD_PER_DAY)))
         bs_co = max(MIN_BATCH_SIZE, min(int(self.batch_size_company), MAX_BATCH_SIZE))
         bs_nm = max(MIN_BATCH_SIZE, min(int(self.batch_size_name), MAX_BATCH_SIZE))
-        if self.model_company not in ALLOWED_MODELS:
+        bs_addr = max(
+            MIN_BATCH_SIZE_ADDRESS,
+            min(int(self.batch_size_address), MAX_BATCH_SIZE_ADDRESS),
+        )
+        if self.model_company not in ALLOWED_MODELS_GROK:
             raise ValueError(f"unknown model_company: {self.model_company!r}")
-        if self.model_name not in ALLOWED_MODELS:
+        if self.model_name not in ALLOWED_MODELS_GROK:
             raise ValueError(f"unknown model_name: {self.model_name!r}")
+        if self.model_address not in ALLOWED_MODELS_OPENROUTER:
+            raise ValueError(f"unknown model_address: {self.model_address!r}")
         return replace(
             self,
             daily_cap_usd=cap,
             batch_size_company=bs_co,
             batch_size_name=bs_nm,
+            batch_size_address=bs_addr,
         )
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
     def batch_size_for(self, kind: str) -> int:
-        return self.batch_size_company if kind == "company" else self.batch_size_name
+        if kind == "address":
+            return self.batch_size_address
+        if kind == "name":
+            return self.batch_size_name
+        return self.batch_size_company
 
     def model_for(self, kind: str) -> str:
-        return self.model_company if kind == "company" else self.model_name
+        if kind == "address":
+            return self.model_address
+        if kind == "name":
+            return self.model_name
+        return self.model_company
 
 
 class SettingsStore:
