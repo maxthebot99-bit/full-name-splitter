@@ -14,7 +14,7 @@ SSE pipe without a separate code path.
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .config import Settings, log
 from .errors import ProviderError
@@ -30,6 +30,7 @@ FETCH_STATUS_TO_ERROR = {
     "dead": "DEAD_DOMAIN",
     "tls_error": "TLS_ERROR",
     "no_response": "NO_RESPONSE",
+    "empty_render": "EMPTY_RENDER",
 }
 
 # TLD -> ISO country code for the "tell me at least the country" fallback.
@@ -104,6 +105,10 @@ class PipelineStats:
     completion_tokens: int = 0
     api_calls: int = 0
     actual_cost: float = 0.0
+    # Per-error-tag bucket counts so the UI can show what KIND of failure
+    # is dominant — CLOUDFLARE vs EMPTY_RENDER vs SITE_BROKEN, etc. Keys
+    # are AddressErrorTag values, values are running counts.
+    error_breakdown: dict[str, int] = field(default_factory=dict)
 
 
 def run_row(name: str, website: str) -> AddressContext:
@@ -262,13 +267,19 @@ async def _route_rows_async(
                 stats.foreign_rows += 1
             elif ctx.error in (
                 "CLOUDFLARE", "SITE_BROKEN", "DEAD_DOMAIN",
-                "TLS_ERROR", "NO_RESPONSE",
+                "TLS_ERROR", "NO_RESPONSE", "EMPTY_RENDER",
             ):
                 stats.fetch_failed_rows += 1
             elif ctx.has_address():
                 stats.extracted_rows += 1
             else:
                 stats.null_rows += 1
+            # Track every error tag (including FOREIGN and LLM_UNAVAILABLE) so
+            # the UI can render the breakdown — not just fetch-fail subtypes.
+            if ctx.error:
+                stats.error_breakdown[ctx.error] = (
+                    stats.error_breakdown.get(ctx.error, 0) + 1
+                )
             done += 1
             _refresh_usage()
             if progress_cb:

@@ -29,8 +29,8 @@ class AddressContext:
     # Operational metadata.
     flags: set[str] = field(default_factory=set)
     is_null: bool = False
-    fetch_status: str | None = None  # ok / cloudflare / dead / broken / tls_error / no_response
-    error: str | None = None  # FOREIGN / CLOUDFLARE / DEAD_DOMAIN / TLS_ERROR / SITE_BROKEN / NO_RESPONSE / LLM_UNAVAILABLE
+    fetch_status: str | None = None  # ok / cloudflare / dead / broken / tls_error / no_response / empty_render
+    error: str | None = None  # FOREIGN / CLOUDFLARE / DEAD_DOMAIN / TLS_ERROR / SITE_BROKEN / NO_RESPONSE / EMPTY_RENDER / LLM_UNAVAILABLE
 
     def flag(self, *flags: str) -> None:
         self.flags.update(flags)

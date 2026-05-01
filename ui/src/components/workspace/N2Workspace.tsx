@@ -18,9 +18,10 @@ interface PillProps {
   active: boolean;
   disabled: boolean;
   onClick: () => void;
+  title?: string;
 }
 
-function StatPill({ kind, count, label, active, disabled, onClick }: PillProps) {
+function StatPill({ kind, count, label, active, disabled, onClick, title }: PillProps) {
   const activeHue =
     kind === 'changed' ? N2.sage :
     kind === 'unchanged' ? N2.ochre :
@@ -47,6 +48,7 @@ function StatPill({ kind, count, label, active, disabled, onClick }: PillProps) 
       type="button"
       onClick={disabled ? undefined : onClick}
       disabled={disabled}
+      title={title}
       style={{
         display: 'inline-flex',
         alignItems: 'center',
@@ -113,6 +115,25 @@ function N2WorkspaceHeader({ view }: { view: AppState }) {
     ? Math.max(addressRows.length, file?.rows ?? 0)
     : Math.max(rows.length, file?.rows ?? 0);
 
+  // Per-error-tag breakdown for the "fetch fail" pill tooltip — lets the user
+  // see at a glance which failure mode dominates without filtering. Backend
+  // also streams this as `telemetry.errorBreakdown` for any future consumer.
+  const fetchFailBreakdown = isAddress
+    ? (() => {
+        const tags = ['CLOUDFLARE', 'EMPTY_RENDER', 'SITE_BROKEN', 'TLS_ERROR', 'DEAD_DOMAIN', 'NO_RESPONSE'] as const;
+        const counts: Record<string, number> = {};
+        for (const r of addressRows) {
+          if (r.error && (tags as readonly string[]).includes(r.error)) {
+            counts[r.error] = (counts[r.error] ?? 0) + 1;
+          }
+        }
+        const parts = tags
+          .filter((t) => counts[t])
+          .map((t) => `${t}: ${counts[t]}`);
+        return parts.length ? parts.join(' · ') : undefined;
+      })()
+    : undefined;
+
   return (
     <div
       style={{
@@ -166,6 +187,7 @@ function N2WorkspaceHeader({ view }: { view: AppState }) {
             active={slice.filter === 'fetch_failed'}
             disabled={isEmpty}
             onClick={() => setFilter(slice.kind, 'fetch_failed')}
+            title={fetchFailBreakdown}
           />
         </>
       ) : (

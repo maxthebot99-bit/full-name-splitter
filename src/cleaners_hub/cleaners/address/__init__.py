@@ -15,5 +15,6 @@ Differs from company/name cleaners by design:
   - Two input columns (business_name, website_url) instead of one
   - Six output columns instead of one
   - Per-row cache (HTML, not LLM output)
-  - Multiple error categories (FOREIGN, CLOUDFLARE, DEAD_DOMAIN, TLS_ERROR)
+  - Multiple error categories (FOREIGN, CLOUDFLARE, DEAD_DOMAIN, TLS_ERROR,
+    EMPTY_RENDER for SPA shells that need JS rendering)
 """

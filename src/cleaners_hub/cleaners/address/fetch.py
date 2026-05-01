@@ -2,16 +2,19 @@
 
 Uses curl_cffi (Chrome 124 TLS fingerprint) to bypass Cloudflare's JA3 checks.
 Cascades through candidate base URLs (apex / www / http / verify=False) and
-falls through to ScrapingBee if SCRAPINGBEE_API_KEY is set and a row gets
-classified as cloudflare-blocked.
+falls through to ScrapingBee if SCRAPINGBEE_API_KEY is set and the curl_cffi
+tier ends in cloudflare / broken / tls_error / empty_render — i.e. anything
+likely to be unblocked by a residential JS-rendering proxy.
 
 Returns (text, status) where status is one of:
-  - ok          : got content
-  - cloudflare  : 403/CF challenge body
-  - broken      : 5xx, Wix-error pages, etc.
-  - dead        : DNS dead, 404
-  - tls_error   : cert problems we couldn't bypass
-  - no_response : timeouts, generic failure
+  - ok            : got content with extractable signal
+  - cloudflare    : 403/CF challenge body
+  - broken        : 5xx, Wix-error pages, etc.
+  - dead          : DNS dead, 404
+  - tls_error     : cert problems we couldn't bypass
+  - no_response   : timeouts, generic failure
+  - empty_render  : 200 OK but cleaned text < 500 chars or no digits — SPA shell
+                    that needs JS rendering before it has any content
 """
 from __future__ import annotations
 
@@ -128,6 +131,25 @@ def _clean_html(html: str, url: str, per_page_chars: int) -> str:
     if len(out) > per_page_chars:
         out = out[:per_page_chars]
     return out
+
+
+def _looks_empty(text: str) -> bool:
+    """True when curl_cffi got 200 OK but the cleaned text has no usable signal.
+
+    `_clean_html` always emits ~150 chars of structural markers (URL header,
+    section dividers) even on a blank page. So the threshold is on the
+    combined post-clean output, not the raw HTML.
+
+    Heuristics — both cheap, hit the same SPA-shell case from different angles:
+      - len < 500 chars: nav stripped, body empty → typical for unrendered SPAs
+      - no digit anywhere: addresses, ZIPs, phones, JSON-LD all contain digits;
+        a digit-free page cannot contain an extractable address regardless
+    """
+    if len(text) < 500:
+        return True
+    if not any(c.isdigit() for c in text):
+        return True
+    return False
 
 
 def _classify_error(exc: Exception | None, status_code: int | None, body: str) -> str:
@@ -317,16 +339,20 @@ async def _discover_and_fetch_locations(
 async def _scrapingbee_fetch(
     url: str, api_key: str, per_page_chars: int
 ) -> tuple[str | None, str]:
-    """ScrapingBee fallback for Cloudflare-blocked rows.
+    """ScrapingBee fallback for Cloudflare-blocked / JS-required / soft-blocked rows.
 
     premium_proxy=true uses residential IPs that bypass Cloudflare bot detection.
+    render_js=true executes the page's JS so we can read content that only
+    materializes after hydration — the dominant failure mode behind the
+    `empty_render` tier. Costs ~25 credits/call (vs. 5 without render_js)
+    so this only fires on the broader fallback set, not on every row.
     """
     params = {
         "api_key": api_key,
         "url": url,
         "premium_proxy": "true",
         "country_code": "us",
-        "render_js": "false",
+        "render_js": "true",
     }
     try:
         async with httpx.AsyncClient(timeout=45.0) as client:
@@ -420,25 +446,48 @@ async def fetch_pages(
                 )
                 chunks.extend(extra)
 
-        if not chunks:
-            status = _summarize_errors(all_errors)
-            if status == "cloudflare":
-                sb_key = os.environ.get("SCRAPINGBEE_API_KEY")
-                if sb_key:
-                    for base in bases[:2]:
-                        got, errs = await _scrapingbee_try_base(
-                            base, sb_key, per_page_chars
-                        )
-                        if got:
-                            chunks = got
-                            break
+        # Decide the curl_cffi-tier outcome before any fallback.
+        # If we got chunks, combine and check for empty-shell — a 200 OK that
+        # nonetheless yields no extractable content is treated as its own tier
+        # so it (a) shows up in stats as a distinct bucket and (b) triggers
+        # the ScrapingBee JS-rendering fallback alongside cloudflare/broken/tls.
+        if chunks:
+            combined = "\n\n".join(chunks)
+            if len(combined) > max_html_chars:
+                combined = combined[:max_html_chars]
+            if _looks_empty(combined):
+                curl_cffi_status = "empty_render"
+                chunks = []
+            else:
+                return combined, "ok"
+        else:
+            curl_cffi_status = _summarize_errors(all_errors)
+
+        # ScrapingBee fallback fires whenever the failure is plausibly an
+        # anti-bot or JS-rendering issue. Skips dead (DNS gone, 404 — proxy
+        # won't help) and no_response (network/timeout — also won't help).
+        if curl_cffi_status in ("cloudflare", "broken", "tls_error", "empty_render"):
+            sb_key = os.environ.get("SCRAPINGBEE_API_KEY")
+            if sb_key:
+                for base in bases[:2]:
+                    got, errs = await _scrapingbee_try_base(
+                        base, sb_key, per_page_chars
+                    )
+                    if got:
+                        chunks = got
+                        break
 
         if not chunks:
-            return "", _summarize_errors(all_errors)
+            return "", curl_cffi_status
 
         combined = "\n\n".join(chunks)
         if len(combined) > max_html_chars:
             combined = combined[:max_html_chars]
+        # ScrapingBee with render_js=true can still return a near-empty body
+        # for genuinely contentless sites. Preserve the empty_render signal
+        # rather than collapsing to "ok" with empty extraction downstream.
+        if _looks_empty(combined):
+            return "", "empty_render"
         return combined, "ok"
 
     if sem is None:

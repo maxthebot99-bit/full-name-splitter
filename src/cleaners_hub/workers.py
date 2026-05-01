@@ -176,6 +176,7 @@ def _address_stats_to_telemetry(stats, elapsed: float) -> dict[str, Any]:
         "blankCount": int(stats.null_rows),
         "foreignCount": int(stats.foreign_rows),
         "fetchFailedCount": int(stats.fetch_failed_rows),
+        "errorBreakdown": {k: int(v) for k, v in stats.error_breakdown.items()},
         "rulesFired": int(stats.api_calls),
         "costUsd": round(float(stats.actual_cost), 4),
     }

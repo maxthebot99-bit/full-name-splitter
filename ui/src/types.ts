@@ -46,6 +46,7 @@ export type AddressErrorTag =
   | 'DEAD_DOMAIN'
   | 'TLS_ERROR'
   | 'NO_RESPONSE'
+  | 'EMPTY_RENDER'
   | 'LLM_UNAVAILABLE';
 
 export interface AddressRow {
@@ -213,6 +214,10 @@ export interface Telemetry {
   blankCount?: number;
   foreignCount?: number;
   fetchFailedCount?: number;
+  // Per-error-tag bucket counts so the UI can show what KIND of failure is
+  // dominant (CLOUDFLARE vs EMPTY_RENDER vs SITE_BROKEN, etc.). Populated only
+  // for the address tab; keys are AddressErrorTag values, values are counts.
+  errorBreakdown?: Record<string, number>;
 }
 
 export interface UiError {
