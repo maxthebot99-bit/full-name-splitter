@@ -32,6 +32,7 @@ ALLOWED_MODELS_GROK: tuple[str, ...] = (
     "grok-4",
 )
 ALLOWED_MODELS_OPENROUTER: tuple[str, ...] = (
+    "meta-llama/llama-3.3-70b-instruct",
     "meta-llama/llama-3.1-8b-instruct",
 )
 # Back-compat alias: existing callers expect ALLOWED_MODELS to be the Grok set.
@@ -64,7 +65,7 @@ class AppSettings:
     batch_size_address: int = 100
     model_company: str = "grok-4-fast-non-reasoning"
     model_name: str = "grok-4-fast-non-reasoning"
-    model_address: str = "meta-llama/llama-3.1-8b-instruct"
+    model_address: str = "meta-llama/llama-3.3-70b-instruct"
 
     def validate(self) -> "AppSettings":
         """Return a new instance with values clamped/normalized to safe bounds.

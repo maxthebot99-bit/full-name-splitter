@@ -29,7 +29,7 @@ PROMPT_VERSION = _compute_prompt_version()
 class Settings:
     provider: str = "openrouter"
     model: dict[str, str] = field(
-        default_factory=lambda: {"openrouter": "meta-llama/llama-3.1-8b-instruct"}
+        default_factory=lambda: {"openrouter": "meta-llama/llama-3.3-70b-instruct"}
     )
     # Smaller batch_size than company/name because each row may fetch up to
     # ~10 pages and processes ~3.5K input tokens through the LLM.
