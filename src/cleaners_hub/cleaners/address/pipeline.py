@@ -32,6 +32,61 @@ FETCH_STATUS_TO_ERROR = {
     "no_response": "NO_RESPONSE",
 }
 
+# TLD -> ISO country code for the "tell me at least the country" fallback.
+# Used when fetch fails or the LLM returns no country — gives the user a
+# rough geographic signal on otherwise-empty rows. Conservative list — only
+# TLDs where the country mapping is unambiguous.
+_TLD_COUNTRY = {
+    "uk": "GB", "co.uk": "GB",
+    "ca": "CA",
+    "au": "AU", "com.au": "AU",
+    "de": "DE",
+    "fr": "FR",
+    "mx": "MX", "com.mx": "MX",
+    "in": "IN", "co.in": "IN",
+    "br": "BR", "com.br": "BR",
+    "jp": "JP", "co.jp": "JP",
+    "es": "ES",
+    "it": "IT",
+    "nl": "NL",
+    "ie": "IE",
+    "nz": "NZ", "co.nz": "NZ",
+    "ch": "CH",
+    "se": "SE",
+    "no": "NO",
+    "dk": "DK",
+    "fi": "FI",
+    "be": "BE",
+    "at": "AT",
+    "pl": "PL",
+}
+
+
+def country_from_url(url: str) -> str:
+    """Best-effort country ISO code from a URL's TLD. Empty when unknown.
+
+    Used as a fallback when the LLM didn't return a country (fetch failed,
+    or the model returned null). Intentionally narrow — .com is left empty
+    rather than guessed as US, since .com is not country-specific.
+    """
+    if not url:
+        return ""
+    try:
+        from urllib.parse import urlparse
+        host = urlparse(url if "://" in url else f"https://{url}").netloc.lower()
+    except Exception:
+        return ""
+    if not host:
+        return ""
+    parts = host.strip(".").split(".")
+    if len(parts) >= 2:
+        last2 = ".".join(parts[-2:])
+        if last2 in _TLD_COUNTRY:
+            return _TLD_COUNTRY[last2]
+    if parts and parts[-1] in _TLD_COUNTRY:
+        return _TLD_COUNTRY[parts[-1]]
+    return ""
+
 
 @dataclass
 class PipelineStats:
@@ -78,11 +133,15 @@ async def _process_one(
     if fetch_status != "ok":
         ctx.error = FETCH_STATUS_TO_ERROR.get(fetch_status, "NO_RESPONSE")
         ctx.is_null = True
+        if not ctx.country:
+            ctx.country = country_from_url(ctx.website_url)
         return ctx
 
     if provider is None:
         ctx.error = "LLM_UNAVAILABLE"
         ctx.flag("NEEDS_MANUAL_REVIEW")
+        if not ctx.country:
+            ctx.country = country_from_url(ctx.website_url)
         return ctx
 
     async with llm_sem:
@@ -92,6 +151,8 @@ async def _process_one(
             log(f"provider error on row {ctx.website_url!r}: {e!r}")
             ctx.error = "LLM_UNAVAILABLE"
             ctx.flag("LLM_UNAVAILABLE")
+    if not ctx.country:
+        ctx.country = country_from_url(ctx.website_url)
     return ctx
 
 

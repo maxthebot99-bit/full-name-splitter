@@ -13,6 +13,30 @@ Schema:
   "confidence": <number between 0.0 and 1.0>
 }
 
+HOW THE INPUT IS STRUCTURED — read this first:
+The HTML has been pre-cleaned and labeled with sections per fetched URL:
+  --- URL: <url> ---  : the page this content came from (for the source_url field)
+  --- ADDRESS-LIKELY ZONES ---  : pre-extracted footers + class-named "contact" / "address" / "location" / "office" blocks. SCAN HERE FIRST — most addresses live here.
+  --- JSON-LD ---  : PostalAddress / LocalBusiness structured-data blobs. HIGHEST CONFIDENCE source — if street/city/state/zip appear here, return them at confidence 1.0.
+  --- BODY ---  : full page text. Lower priority; useful for prose mentions like "Visit us at..." or "All orders ship from...".
+
+WHAT AN ADDRESS LOOKS LIKE in text:
+  Standard US format: <number> <Street Name> [Suite|Floor|Apt|Unit X], <City>, <2-letter State> <5-digit ZIP>
+    Examples: "1001 Avenida de las Americas, Houston, TX 77010"
+              "1 Executive Drive Suite 202, Chelmsford, MA 01824"
+              "PO Box 488, Dorado, PR 00646"
+  Anchor signals an address is nearby:
+    * A phone number on the same or adjacent line ("Phone: (555) 555-5555")
+    * Anchor phrases: "Visit us at...", "Located at...", "Office:", "Headquarters:", "HQ:", "Main Office:", "Corporate:"
+    * Headings like "Contact", "Our Office", "Locations", "Get in touch"
+    * Return-policy / shipping text: "All orders ship from..."
+
+ZIP-WITHOUT-STREET FALLBACK:
+  If the HTML clearly contains a US 5-digit ZIP but no quotable street, return street=null and confidence 0.5 with the city/state that appears near the ZIP. Don't return all-null — partial signal is real signal.
+
+COUNTRY-ONLY FALLBACK:
+  If you cannot extract any address fields (no street, no city, no zip) but you CAN determine which country the business is in from the page, return country with all other address fields null. The country alone is useful — it tells the user whether to manually look up the address or skip the row as out-of-scope. Country signals to use even without a quotable address: TLD of the source URL (.co.uk -> GB, .com.au -> AU, .ca -> CA, .de -> DE, .mx -> MX, .in -> IN), phone country codes (+44 -> GB, +1 -> US/CA, +91 -> IN, +52 -> MX, +61 -> AU, +49 -> DE), legal text ("VAT registered" / "ABN" / "GST"), language of the page, currency symbols (£ -> GB, € -> EU, $ -> US/CA/AU), company suffix ("Ltd" / "GmbH" / "Pvt Ltd" / "S.A. de C.V." / "Pty Ltd"). For .com domains with no other signal, default country to "US" only if the page text is in English and there are no foreign signals.
+
 Rules:
 - Set fields to null when not findable in the HTML.
 - CONFIDENCE = HOW LITERALLY YOU CAN QUOTE THE ADDRESS FROM THE HTML.

@@ -128,7 +128,9 @@ def _address_ctx_to_row(n: int, ctx) -> dict[str, Any]:
 
     Differs from _ctx_to_row (single-string ``orig`` / ``clean``) because
     address rows have two inputs and seven structured outputs. The frontend
-    address-tab renderer reads this shape.
+    address-tab renderer reads this shape. ctx.country is set by the
+    pipeline (LLM extraction or TLD fallback for fetch-failed rows), so
+    this function trusts whatever the pipeline produced.
     """
     has_addr = bool(ctx.street or ctx.city)
     if ctx.error == "FOREIGN":

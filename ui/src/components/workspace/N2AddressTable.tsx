@@ -145,12 +145,13 @@ function StatusChip({ row }: { row: AddressRow }) {
     border = 'rgba(225, 180, 90, 0.45)';
     color = '#d4a35a';
   } else if (row.status === 'fetch_failed') {
-    label = (row.error || 'fetch fail').toLowerCase().replace('_', ' ');
+    const base = (row.error || 'fetch fail').toLowerCase().replace('_', ' ');
+    label = row.country ? `${base} · ${row.country}` : base;
     bg = 'rgba(255, 96, 96, 0.07)';
     border = 'rgba(255, 96, 96, 0.4)';
     color = '#e57878';
   } else if (row.status === 'blank') {
-    label = 'no address';
+    label = row.country ? `no address · ${row.country}` : 'no address';
   } else if (row.status === 'pending') {
     label = 'queued';
   }
