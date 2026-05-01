@@ -251,7 +251,14 @@ class OpenRouterLlamaProvider:
     async def _call(
         self, client: httpx.AsyncClient, user_message: str, *, temperature: float = 0.1
     ) -> tuple[dict | None, dict]:
-        """One LLM call. Returns (parsed_json_or_None, usage_dict)."""
+        """One LLM call. Returns (parsed_json_or_None, usage_dict).
+
+        We deliberately do NOT send `response_format: json_object`. OpenRouter
+        documents this parameter as model/provider-dependent, and some Gemini
+        and Anthropic routings either reject it or return empty content when
+        it's present. Our system prompt already constrains output to JSON,
+        and `_parse_json_response` handles the rare markdown-fence wrapping.
+        """
         body = {
             "model": self.model,
             "messages": [
@@ -259,8 +266,7 @@ class OpenRouterLlamaProvider:
                 {"role": "user", "content": user_message},
             ],
             "temperature": temperature,
-            "max_tokens": 300,
-            "response_format": {"type": "json_object"},
+            "max_tokens": 500,
             # Force OpenRouter to include billing-truth `cost` + cached-token
             # details in the response so our sidebar's COST / TOKENS IN
             # numbers match what their dashboard shows.
@@ -299,6 +305,11 @@ class OpenRouterLlamaProvider:
 
         usage = data.get("usage") or {}
         parsed = _parse_json_response(content)
+        if parsed is None:
+            # Log just enough to debug provider-shape regressions next time
+            # without leaking the full prompt or response into journalctl.
+            preview = (content or "")[:160].replace("\n", " ")
+            log(f"address LLM parse-fail model={self.model} content_len={len(content or '')} preview={preview!r}")
         return parsed, usage
 
     async def extract(self, ctx: AddressContext, html_text: str) -> AddressContext:
