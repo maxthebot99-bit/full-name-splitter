@@ -34,9 +34,14 @@ FETCH_STATUS_TO_ERROR = {
 
 # TLD -> ISO country code for the "tell me at least the country" fallback.
 # Used when fetch fails or the LLM returns no country — gives the user a
-# rough geographic signal on otherwise-empty rows. Conservative list — only
-# TLDs where the country mapping is unambiguous.
+# rough geographic signal on otherwise-empty rows. ccTLDs are unambiguous;
+# .com / .net / .org / .co default to "US" because for fetch-failed rows
+# we have no other signal and our customer base is overwhelmingly US-centric.
+# A genuinely foreign .com firm whose homepage extracts cleanly will be
+# overridden by the LLM's country call; this default only applies on rows
+# where the LLM never ran or returned empty country.
 _TLD_COUNTRY = {
+    "com": "US", "net": "US", "org": "US", "co": "US",
     "uk": "GB", "co.uk": "GB",
     "ca": "CA",
     "au": "AU", "com.au": "AU",
@@ -66,8 +71,8 @@ def country_from_url(url: str) -> str:
     """Best-effort country ISO code from a URL's TLD. Empty when unknown.
 
     Used as a fallback when the LLM didn't return a country (fetch failed,
-    or the model returned null). Intentionally narrow — .com is left empty
-    rather than guessed as US, since .com is not country-specific.
+    provider unavailable, or the model returned null). Generic TLDs
+    (.com/.net/.org/.co) default to "US" — see _TLD_COUNTRY comment above.
     """
     if not url:
         return ""

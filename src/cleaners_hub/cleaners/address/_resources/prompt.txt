@@ -34,8 +34,21 @@ WHAT AN ADDRESS LOOKS LIKE in text:
 ZIP-WITHOUT-STREET FALLBACK:
   If the HTML clearly contains a US 5-digit ZIP but no quotable street, return street=null and confidence 0.5 with the city/state that appears near the ZIP. Don't return all-null — partial signal is real signal.
 
-COUNTRY-ONLY FALLBACK:
-  If you cannot extract any address fields (no street, no city, no zip) but you CAN determine which country the business is in from the page, return country with all other address fields null. The country alone is useful — it tells the user whether to manually look up the address or skip the row as out-of-scope. Country signals to use even without a quotable address: TLD of the source URL (.co.uk -> GB, .com.au -> AU, .ca -> CA, .de -> DE, .mx -> MX, .in -> IN), phone country codes (+44 -> GB, +1 -> US/CA, +91 -> IN, +52 -> MX, +61 -> AU, +49 -> DE), legal text ("VAT registered" / "ABN" / "GST"), language of the page, currency symbols (£ -> GB, € -> EU, $ -> US/CA/AU), company suffix ("Ltd" / "GmbH" / "Pvt Ltd" / "S.A. de C.V." / "Pty Ltd"). For .com domains with no other signal, default country to "US" only if the page text is in English and there are no foreign signals.
+COUNTRY-ONLY FALLBACK (LAST RESORT — abstain path, NOT a shortcut):
+  Use this ONLY after you have genuinely searched ADDRESS-LIKELY ZONES, JSON-LD, and BODY for the address patterns described above and found NO street, NO ZIP, and NO city. If you found ANY component (city alone, ZIP alone, partial street), use the ZIP-WITHOUT-STREET FALLBACK above and return what you found at confidence 0.3-0.6 — DO NOT skip past extraction to country-only.
+
+  WRONG (you had a full address, extract it):
+    Footer contains "1740 Main Street, Kansas City, MO 64108" → returning {street:null,city:null,state:null,zip:null,country:"US"} is WRONG. Correct answer: street="1740 Main Street", city="Kansas City", state="MO", zip="64108", country="US", confidence 0.9.
+  WRONG (you had a city, extract it):
+    Contact page mentions "Visit us in Atlanta" with a US-area-code phone → returning {street:null,city:null,country:"US"} is WRONG. Correct: city="Atlanta", state=null, country="US", confidence 0.5.
+  RIGHT (genuinely no extractable address):
+    Page is 700 bytes of nav + footer copyright, nothing extractable → return all-null with country="US" (from .com domain in English) at confidence 0.0.
+  RIGHT (entirely foreign-language page with no quotable street):
+    German page with VAT registration but no street block → return all-null with country="DE" at confidence 0.0.
+
+  Country signals when the address is genuinely unfindable: TLD (.co.uk -> GB, .com.au -> AU, .ca -> CA, .de -> DE, .mx -> MX, .in -> IN), phone country codes (+44 -> GB, +91 -> IN, +52 -> MX, +61 -> AU, +49 -> DE), legal text ("VAT registered" / "ABN" / "GST"), language of the page, currency symbols, company suffix ("Ltd" / "GmbH" / "Pvt Ltd" / "Pty Ltd"). For .com domains in English with no foreign signals, default country to "US".
+
+  ALWAYS prefer extracting a real address (full or partial) over returning country-only. country-only is the last resort, not the easy answer.
 
 Rules:
 - Set fields to null when not findable in the HTML.
