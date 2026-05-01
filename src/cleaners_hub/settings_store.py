@@ -32,8 +32,11 @@ ALLOWED_MODELS_GROK: tuple[str, ...] = (
     "grok-4",
 )
 ALLOWED_MODELS_OPENROUTER: tuple[str, ...] = (
+    "google/gemini-2.5-flash-lite",
+    "google/gemini-2.0-flash-001",
     "meta-llama/llama-3.3-70b-instruct",
     "meta-llama/llama-3.1-8b-instruct",
+    "x-ai/grok-4-fast",
 )
 # Back-compat alias: existing callers expect ALLOWED_MODELS to be the Grok set.
 ALLOWED_MODELS = ALLOWED_MODELS_GROK
@@ -65,7 +68,7 @@ class AppSettings:
     batch_size_address: int = 100
     model_company: str = "grok-4-fast-non-reasoning"
     model_name: str = "grok-4-fast-non-reasoning"
-    model_address: str = "meta-llama/llama-3.3-70b-instruct"
+    model_address: str = "google/gemini-2.5-flash-lite"
 
     def validate(self) -> "AppSettings":
         """Return a new instance with values clamped/normalized to safe bounds.

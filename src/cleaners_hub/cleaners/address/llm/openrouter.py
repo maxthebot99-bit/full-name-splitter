@@ -125,19 +125,21 @@ def _apply_to_context(ctx: AddressContext, parsed: dict) -> AddressContext:
 
 
 class OpenRouterLlamaProvider:
-    """Llama 3.3 70B (default) via OpenRouter's OpenAI-compatible endpoint.
+    """OpenRouter chat-completion provider for the address tab.
 
-    Switched from Llama 3.1 8B on 2026-04-30: empirical testing showed the 8B
-    variant couldn't reliably handle multi-country office picks (Slalom-class
-    cases) and over-fired the country-only fallback. 70B trades ~5x cost for
-    materially better instruction following on edge cases.
+    Despite the historical 'Llama' in the class name, this is a generic
+    OpenRouter client and works with whichever model is set in
+    AppSettings.model_address. Default as of 2026-04-30: gemini-2.5-flash-lite
+    (~$0.0009/row, native JSON mode, materially better structured-output
+    quality than Llama 3.x at the same price). See ALLOWED_MODELS_OPENROUTER
+    for the full whitelist; admins can swap models via the Settings modal.
     """
 
     def __init__(self, model: str | None = None, api_key: str | None = None):
         s = Settings.load()
         self.name = "openrouter"
         self.model = model or s.model.get(
-            "openrouter", "meta-llama/llama-3.3-70b-instruct"
+            "openrouter", "google/gemini-2.5-flash-lite"
         )
         key = api_key or get_key("openrouter")
         if not key:
