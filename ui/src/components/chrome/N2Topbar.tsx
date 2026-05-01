@@ -194,11 +194,11 @@ export function N2Topbar({ view }: Props) {
 }
 
 // Provider chip — shows which LLM vendor backs the currently-active tab.
-// Company / first-name → xAI Grok. Address → Llama via OpenRouter.
+// Company / first-name → xAI Grok. Address → Gemini via OpenRouter (was Llama).
 function ProviderChip({ kind }: { kind: 'company' | 'name' | 'address' }) {
   const isAddress = kind === 'address';
-  const label = isAddress ? 'llama' : 'grok';
-  const glyph = isAddress ? '🦙' : '𝕏';
+  const label = isAddress ? 'gemini' : 'grok';
+  const glyph = isAddress ? '✦' : '𝕏';
   return (
     <div
       style={{
