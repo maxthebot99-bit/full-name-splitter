@@ -1,0 +1,39 @@
+version: 2
+# Dependabot config — auto-PRs for dep updates.
+# Combined with the per-repo Dependabot ALERTS (already enabled via API
+# 2026-05-14), this gives both vulnerability notification AND remediation
+# PRs. SOC 2 CC7.1 / ISO 27001 A.8.8 evidence.
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/New_York"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "automated"
+
+  - package-ecosystem: "npm"
+    directory: "/ui"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/New_York"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "automated"
+      - "ui"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "automated"
