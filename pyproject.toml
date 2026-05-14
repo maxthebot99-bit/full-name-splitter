@@ -33,6 +33,10 @@ dependencies = [
     "beautifulsoup4>=4.12",    # HTML parsing for address extraction
     "lxml>=5.0",               # BeautifulSoup parser backend
     "pydantic>=2.5",           # AddressResult schema validation in LLM provider
+    # CSO 2026-05-14: urllib3 pulled in transitively (resend/tiktoken via
+    # requests). Pinned at >=2.7.0 to clear CVE-2026-44431 + CVE-2026-44432
+    # (both fixed in 2.7.0). Direct dep so pip-install paths inherit it.
+    "urllib3>=2.7.0",
 ]
 
 [project.optional-dependencies]
@@ -51,3 +55,8 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 cleaners_hub = ["ui_dist/**/*"]
+
+# Supply-chain hardening — refuse to install any package version published in the
+# last 7 days. See ~/vault/20-areas/security/supply-chain-hardening.md.
+[tool.uv]
+exclude-newer = "7 days"
