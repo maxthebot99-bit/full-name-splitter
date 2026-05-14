@@ -19,13 +19,18 @@ Returns (text, status) where status is one of:
 from __future__ import annotations
 
 import asyncio
+import ipaddress
+import logging
 import os
 import re
+import socket
 from urllib.parse import urlparse, urljoin
 
 import httpx
 from bs4 import BeautifulSoup
 from curl_cffi.requests import AsyncSession
+
+_log = logging.getLogger("cleaners_hub.address.fetch")
 
 
 IMPERSONATE = "chrome124"
@@ -177,6 +182,59 @@ def _classify_error(exc: Exception | None, status_code: int | None, body: str) -
     return "no_response"
 
 
+def _is_safe_url(url: str) -> tuple[bool, str]:
+    """Return (True, "") if the URL resolves to public IPs only.
+
+    Otherwise (False, reason) with reason in {"private_host", "no_host",
+    "resolve_failed", "non_http"}. Used to defend against SSRF when the
+    URL comes from user-supplied CSV cells (address-tab `website_url`).
+
+    Defense in depth on top of the systemd-level `IPAddressDeny` rules
+    that block RFC1918, link-local + cloud metadata (169.254.0.0/16),
+    Tailscale CGNAT, and IPv6 ULA at the network layer. This function
+    also closes the loopback path (127.0.0.0/8, ::1) which is left open
+    at the systemd layer to preserve unit-internal health checks.
+
+    Does NOT defend against DNS rebinding mid-fetch (where the host
+    resolves to a public IP at safety-check time but to a private IP
+    at request time). curl_cffi doesn't expose an easy way to pin the
+    resolved IP into the request; the residual risk is mitigated by
+    the systemd egress deny list for most internal destinations and
+    by the short request timeout (15s).
+    """
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        return False, "non_http"
+    host = parsed.hostname
+    if not host:
+        return False, "no_host"
+    try:
+        addr_info = socket.getaddrinfo(host, None)
+    except (socket.gaierror, socket.herror, UnicodeError):
+        return False, "resolve_failed"
+    for family, _type, _proto, _canon, sockaddr in addr_info:
+        try:
+            ip = ipaddress.ip_address(sockaddr[0])
+        except ValueError:
+            return False, "private_host"
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_multicast
+            or ip.is_reserved
+            or ip.is_unspecified
+        ):
+            return False, "private_host"
+        if isinstance(ip, ipaddress.IPv4Address):
+            # 100.64.0.0/10 — RFC 6598 CGNAT, used by Tailscale. Not
+            # `is_private` per ipaddress, but never legitimate for
+            # third-party scraping from this app.
+            if ipaddress.ip_address("100.64.0.0") <= ip <= ipaddress.ip_address("100.127.255.255"):
+                return False, "private_host"
+    return True, ""
+
+
 async def _fetch_url(
     session: AsyncSession,
     url: str,
@@ -185,10 +243,39 @@ async def _fetch_url(
     expected_host: str | None = None,
     per_page_chars: int = 5_000,
 ) -> tuple[str | None, str]:
+    # CSO 2026-05-14 (SSRF defense in depth): reject URLs that resolve to
+    # private/loopback/link-local IPs before issuing the request. The
+    # systemd unit (see deploy/cleaners-hub.service) blocks most internal
+    # destinations at the network layer; this closes loopback explicitly
+    # (left open at the systemd layer for unit-internal health checks).
+    safe, reason = _is_safe_url(url)
+    if not safe:
+        _log.warning(
+            "ssrf_blocked",
+            extra={"url_host": urlparse(url).hostname, "reason": reason},
+        )
+        return None, "ssrf_blocked"
     try:
         r = await session.get(
             url, timeout=TIMEOUT, allow_redirects=True, verify=verify
         )
+        # Post-fetch: if redirect carried us to a private host, drop the
+        # response. The fetch already happened (residual risk for GET-side-
+        # effecting internal services), but at least the response body
+        # doesn't reach the LLM prompt downstream.
+        final_url = str(r.url)
+        if final_url != url:
+            safe_final, reason_final = _is_safe_url(final_url)
+            if not safe_final:
+                _log.warning(
+                    "ssrf_blocked_after_redirect",
+                    extra={
+                        "url_host": urlparse(url).hostname,
+                        "final_host": urlparse(final_url).hostname,
+                        "reason": reason_final,
+                    },
+                )
+                return None, "ssrf_blocked"
         if r.status_code == 200 and r.text and not any(
             s in r.text.lower()[:4000] for s in CF_FINGERPRINTS
         ):
