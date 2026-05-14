@@ -12,14 +12,14 @@
 
 Web app behind Cloudflare Access that consumes a CSV/XLSX upload, sends rows to the Grok API for company-name or first-name normalization in batches, and returns the cleaned output with a new `cleaned_<column>` column. Replaces the legacy desktop apps `company-name-cleaner` and `first-name-cleaner`. The Grok API key is encrypted via systemd-creds and never echoed to the browser.
 
-The Address tab uses Gemini (via OpenRouter) instead of Grok. It works but Address enrichment is currently paused — Clay is cheaper for that use case.
+The Address tab uses Gemini (via OpenRouter) instead of Grok. It works but Address enrichment is currently paused, since Clay is cheaper for that use case.
 
 Sibling apps: [pipeline-hub] calls cleaners-hub as a service during stages 7-8 of the integrated campaign pipeline.
 
 ## Stack
 
 - Python 3.11, FastAPI + Uvicorn
-- React + TypeScript + Vite (UI) — `ui/` source, builds to `src/cleaners_hub/ui_dist/` which the FastAPI app serves via StaticFiles
+- React + TypeScript + Vite (UI). `ui/` source builds to `src/cleaners_hub/ui_dist/`, which the FastAPI app serves via StaticFiles
 - httpx for Grok/OpenRouter HTTP calls
 - tiktoken for token accounting + cost tracking
 - pandas + pyarrow + openpyxl for CSV/Excel I/O
