@@ -372,6 +372,47 @@ class SettingsPatch(BaseModel):
 
 # ─── Routes ─────────────────────────────────────────────────────────────────
 
+
+_SOP_PATH = Path(__file__).resolve().parents[2] / "SOP.md"
+
+
+@app.get("/SOP.md")
+def sop_md() -> FileResponse:
+    """Serve the end-user SOP as raw markdown (consumed by /help and by the app-dashboard)."""
+    return FileResponse(_SOP_PATH, media_type="text/markdown; charset=utf-8")
+
+
+@app.get("/help", response_class=HTMLResponse)
+def help_page() -> HTMLResponse:
+    """Standalone HTML help page. Fetches /SOP.md and renders client-side with marked."""
+    return HTMLResponse("""<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8">
+<title>Help - Cleaners Hub</title>
+<script src="https://cdn.jsdelivr.net/npm/marked@5.1.2/marked.min.js" crossorigin="anonymous"></script>
+<style>
+  body { font-family: Inter, -apple-system, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 20px; color: #f0f2f5; background: #06070a; line-height: 1.6; }
+  h1, h2 { color: #fff; }
+  code { background: #14171f; padding: 2px 6px; border-radius: 4px; }
+  a { color: #00d4ff; }
+  #content { min-height: 60vh; }
+</style>
+</head><body>
+<div id="content">Loading...</div>
+<p><a href="/">Back to app</a></p>
+<script>
+fetch('/SOP.md').then(r => {
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.text();
+}).then(md => {
+  document.getElementById('content').innerHTML = marked.parse(md);
+}).catch(e => {
+  document.getElementById('content').innerHTML = '<p>Could not load help: ' + e.message + '</p>';
+});
+</script>
+</body></html>""")
+
+
 @app.get("/api/health")
 async def health() -> dict:
     return {

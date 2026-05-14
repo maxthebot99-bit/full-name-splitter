@@ -182,6 +182,7 @@ export function N2Topbar({ view }: Props) {
             overflow: 'hidden',
           }}
         >
+          <ChromeBtn label="Help" onClick={() => window.open('/help', '_blank', 'noopener,noreferrer')} />
           <ChromeBtn label="History" onClick={() => openHistory()} />
           {whoami?.is_admin && (
             <ChromeBtn label="Settings" onClick={() => setSettingsOpen(true)} last />
