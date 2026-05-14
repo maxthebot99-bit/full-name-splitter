@@ -1,0 +1,7 @@
+# CODEOWNERS — auto-tag reviewers on PRs.
+# Branch protection requires a Pro plan for private repos, so this
+# file is enforcement-free on Free plan today. It still: auto-requests
+# review from the listed owners on every PR (documented change-mgmt
+# evidence for SOC 2 CC8.1).
+
+* @maxthebot99-bit
