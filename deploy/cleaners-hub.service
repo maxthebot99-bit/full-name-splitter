@@ -88,5 +88,25 @@ ReadWritePaths=/var/lib/cleaners-hub
 StateDirectory=cleaners-hub
 RuntimeDirectory=cleaners-hub
 
+# ─── Egress firewall (SSRF mitigation, 2026-05-14) ──────────────────
+# The address-tab fetch_pages() worker accepts user-supplied URLs from
+# CSV cells. Without egress restrictions, a malicious CSV with
+# website_url=http://169.254.169.254/ or website_url=http://10.x.x.x/
+# would reach cloud metadata, the Tailscale mesh, or any sibling app
+# on the VPS LAN. Block private IPv4, link-local + metadata, Tailscale
+# CGNAT, and IPv6 link-local + ULA. Public-internet egress (xAI,
+# OpenRouter, ScrapingBee, Resend, user-supplied public URLs) is
+# unaffected. Loopback (127.0.0.0/8, ::1) is intentionally NOT denied
+# here so any unit-internal health checks keep working; the residual
+# loopback SSRF path is closed by the planned code-level fix in
+# fetch.py (private-IP rejection before the HTTP request).
+IPAddressDeny=10.0.0.0/8
+IPAddressDeny=172.16.0.0/12
+IPAddressDeny=192.168.0.0/16
+IPAddressDeny=169.254.0.0/16
+IPAddressDeny=100.64.0.0/10
+IPAddressDeny=fe80::/10
+IPAddressDeny=fc00::/7
+
 [Install]
 WantedBy=multi-user.target
