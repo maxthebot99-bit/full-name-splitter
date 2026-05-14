@@ -1,0 +1,14 @@
+# Security disclosure for cleaners-hub — RFC 9116
+# https://www.rfc-editor.org/rfc/rfc9116
+#
+# Intended to be served at https://cleaners.maxcommandcenter.com/.well-known/security.txt.
+# Current deployment gates the entire domain behind Cloudflare Access,
+# so this file is not externally reachable as of 2026-05-14. To publish:
+# add a CF Access policy bypass for the path "/.well-known/*" on the
+# host, OR mirror this file behind a public path that's deliberately
+# exempt from Access.
+
+Contact: mailto:jazif@benchmarkintl.com
+Expires: 2027-05-14T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://cleaners.maxcommandcenter.com/.well-known/security.txt
