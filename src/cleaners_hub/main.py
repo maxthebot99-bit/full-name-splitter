@@ -94,7 +94,14 @@ EST_USD_PER_ROW = Decimal("0.000011")  # observed: ~$0.0081 / 748 rows on Grok-4
 # Emails allowed to PUT /api/settings + see other users' run history.
 # Hardcoded in code, not env, to keep admin gating outside the blast
 # radius of a compromised .env file.
-ADMIN_EMAILS: frozenset[str] = frozenset({"maxthebot99@gmail.com"})
+#
+# CSO 2026-05-14: swapped from personal Gmail to Benchmark federated
+# identity. Personal Gmail lacked Benchmark MFA enforcement and was
+# subject to separate password-reuse risk; SOC 2 CC6.1 requires admin
+# access via federated identity with enforced MFA. CF Access wildcard
+# *.maxcommandcenter.com allows both Google SSO and Benchmark M365 SSO,
+# so the auth path is preserved.
+ADMIN_EMAILS: frozenset[str] = frozenset({"jazif@benchmarkintl.com"})
 
 
 def _is_admin(email: str | None) -> bool:
