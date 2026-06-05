@@ -6,7 +6,7 @@ import csv
 
 import pandas as pd
 
-from ..types import NameContext
+from ..types import FIRST_COLUMN, LAST_COLUMN, NameContext
 
 
 def _sanitize_csv_value(s: str) -> str:
@@ -35,34 +35,47 @@ def build_export_df(
     source_df: pd.DataFrame,
     name_column: str,
     contexts: list[NameContext],
-    overrides: dict[int, str] | None = None,
+    overrides: dict[int, tuple[str | None, str | None]] | None = None,
 ) -> pd.DataFrame:
-    """Append cleaned columns to the source dataframe, preserving all originals.
+    """Append First Name / Last Name (plus is_null + grok_reason) columns.
 
-    overrides: mapping of row index (0-based in source_df.index order) → user-edited
-    cleaned value. Wins over LLM/deterministic output. Both LLM and
-    override values pass through _sanitize_csv_value before serialization.
+    Different shape from the original ``name`` writer: instead of one
+    ``<col>__cleaned`` column we emit two — ``First Name`` and
+    ``Last Name`` — so downstream CRMs can map them directly.
+
+    ``overrides``: mapping row index → (first_override, last_override).
+    Either value can be None to clear that part. The override format is
+    deliberately a pair, not a single string, because the splitter
+    operates on two independent fields.
+
+    None values are written as empty strings (never the literal "None").
+    The is_null flag is True iff BOTH parts are null (mirrors the
+    NameContext.is_null semantics).
     """
     if len(contexts) != len(source_df):
         raise ValueError("contexts length mismatch with source_df")
     overrides = overrides or {}
-    cleaned = []
-    is_null = []
-    grok_reason = []
+    firsts: list[str] = []
+    lasts: list[str] = []
+    is_null: list[bool] = []
+    grok_reason: list[str] = []
     for i, ctx in enumerate(contexts):
+        f_val: str | None
+        l_val: str | None
         if i in overrides:
-            val = overrides[i]
-            null_flag = (val == "") or (val.strip().lower() == "null")
+            f_val, l_val = overrides[i]
+            null_flag = (not f_val) and (not l_val)
         else:
-            val = ctx.current
+            f_val = ctx.first
+            l_val = ctx.last
             null_flag = ctx.is_null
-            if null_flag:
-                val = ""
-        cleaned.append(_sanitize_csv_value(val))
+        firsts.append(_sanitize_csv_value(f_val or ""))
+        lasts.append(_sanitize_csv_value(l_val or ""))
         is_null.append(bool(null_flag))
         grok_reason.append(_sanitize_csv_value((ctx.llm_reason or "").strip()))
     out = source_df.copy()
-    out[f"{name_column}__cleaned"] = cleaned
+    out[FIRST_COLUMN] = firsts
+    out[LAST_COLUMN] = lasts
     out[f"{name_column}__is_null"] = is_null
     out[f"{name_column}__grok_reason"] = grok_reason
     return out

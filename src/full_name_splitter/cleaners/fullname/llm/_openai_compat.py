@@ -7,10 +7,8 @@ from tenacity import retry, retry_if_exception_type, wait_exponential_jitter
 
 from ..config import Settings
 from ..errors import ProviderAuthError, ProviderBadResponseError, ProviderRateLimitError, ProviderTransientError
+from .base import SplitOutput
 from .prompt_loader import build_batch_prompt
-
-
-CleanOutput = tuple[str | None, str]  # (cleaned_or_None, reason)
 
 
 # Tenacity doesn't have a built-in "different attempt budget per exception
@@ -47,12 +45,37 @@ def _scrub_output_value(s: str) -> str:
     return cleaned
 
 
-def _parse_outputs(content: str, expected_n: int) -> list[CleanOutput]:
+def _normalize_name_part(raw) -> str | None:
+    """Coerce a raw JSON value into a (str | None) name token.
+
+    Accepts JSON null, the string "null" (sentinel), or a regular string.
+    Anything else degrades to None — we prefer dropping a malformed value
+    to crashing the whole batch.
+    """
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        scrubbed = _scrub_output_value(raw)
+        if not scrubbed:
+            return None
+        if scrubbed.lower() == "null":
+            return None
+        return scrubbed
+    return None
+
+
+def _parse_outputs(content: str, expected_n: int) -> list[SplitOutput]:
     """Extract the outputs array from a model response. Tolerant of code fences.
 
-    Accepts two shapes for backwards-compatibility with older prompt variants:
-      • new: [{"cleaned": "Foo", "why": "reason"}, ...]
-      • old: ["Foo", "null", ...]  (reason defaults to "")
+    Accepts the splitter shape:
+      • new: [{"first": "John", "last": "Smith", "why": "reason"}, ...]
+
+    For robustness with older or degraded responses, also tolerates:
+      • a bare list at the root (no ``outputs`` key)
+      • items shaped {"first":..., "last":...} without ``why`` (why defaults to "")
+      • items shaped {"cleaned":...} from a pre-splitter prompt (best-effort:
+        cleaned becomes ``first`` and ``last`` is None — these get null-flagged
+        downstream by the pipeline so the row is obvious in the UI).
 
     All extracted strings pass through _scrub_output_value to defang
     Excel-formula-injection payloads and strip control chars.
@@ -74,38 +97,43 @@ def _parse_outputs(content: str, expected_n: int) -> list[CleanOutput]:
                 raise ProviderBadResponseError(f"invalid JSON: {e}") from e
         else:
             raise ProviderBadResponseError(f"invalid JSON: {e}") from e
-    if not isinstance(obj, dict):
-        raise ProviderBadResponseError("response root is not an object")
-    outputs = obj.get("outputs")
-    if not isinstance(outputs, list):
-        raise ProviderBadResponseError("missing 'outputs' array")
+
+    if isinstance(obj, list):
+        outputs = obj
+    elif isinstance(obj, dict):
+        outputs = obj.get("outputs")
+        if not isinstance(outputs, list):
+            raise ProviderBadResponseError("missing 'outputs' array")
+    else:
+        raise ProviderBadResponseError("response root is not an object or array")
+
     if len(outputs) != expected_n:
         raise ProviderBadResponseError(
             f"outputs length {len(outputs)} != expected {expected_n}"
         )
-    parsed: list[CleanOutput] = []
+
+    parsed: list[SplitOutput] = []
     for v in outputs:
         if v is None:
-            parsed.append((None, ""))
-        elif isinstance(v, str):
-            scrubbed = _scrub_output_value(v)
-            cleaned = None if scrubbed.lower() == "null" else scrubbed
-            parsed.append((cleaned, ""))
-        elif isinstance(v, dict):
-            raw_cleaned = v.get("cleaned")
-            if raw_cleaned is None:
-                cleaned = None
-            elif isinstance(raw_cleaned, str):
-                scrubbed = _scrub_output_value(raw_cleaned)
-                cleaned = None if scrubbed.lower() == "null" else scrubbed
-            else:
-                cleaned = None
-            why = v.get("why") or ""
-            if not isinstance(why, str):
-                why = str(why)
-            parsed.append((cleaned, _scrub_output_value(why)))
+            parsed.append((None, None, ""))
+            continue
+        if not isinstance(v, dict):
+            # A bare string or other malformed item — null-flag the row
+            # instead of crashing the whole batch.
+            parsed.append((None, None, ""))
+            continue
+        # Primary shape: {"first": ..., "last": ..., "why": ...}
+        if "first" in v or "last" in v:
+            first = _normalize_name_part(v.get("first"))
+            last = _normalize_name_part(v.get("last"))
         else:
-            parsed.append((None, ""))
+            # Pre-splitter fallback: {"cleaned": ...} — treat as first only.
+            first = _normalize_name_part(v.get("cleaned"))
+            last = None
+        why = v.get("why") or ""
+        if not isinstance(why, str):
+            why = str(why)
+        parsed.append((first, last, _scrub_output_value(why)))
     return parsed
 
 
@@ -138,19 +166,19 @@ class OpenAICompatibleClient:
 
     def test_connection(self) -> tuple[bool, str]:
         try:
-            out = self.clean_batch(["Greenlight Financial LLC"])
-            cleaned, why = out[0]
-            return True, f"OK - cleaned={cleaned!r} why={why!r}"
+            out = self.clean_batch(["John Smith"])
+            first, last, why = out[0]
+            return True, f"OK - first={first!r} last={last!r} why={why!r}"
         except ProviderAuthError as e:
             return False, f"Auth failed: {e}"
         except Exception as e:
             return False, f"{type(e).__name__}: {e}"
 
     def estimate_cost_per_row(self) -> float:
-        # Empirical: ~280 input tokens (prompt + 1 input), ~10 output tokens per row
-        # For batches of 50, prompt is amortized but we keep per-row to be conservative.
+        # Empirical: ~280 input tokens (prompt + 1 input), ~14 output tokens per row
+        # (slightly higher than name kind because we emit two fields instead of one).
         in_tokens = 300.0 / 50.0 + 10.0  # amortized prompt + per-row input
-        out_tokens = 8.0
+        out_tokens = 14.0
         return (in_tokens / 1000.0) * self.cost_in_per_1k + (out_tokens / 1000.0) * self.cost_out_per_1k
 
     @retry(
@@ -159,17 +187,14 @@ class OpenAICompatibleClient:
         wait=wait_exponential_jitter(initial=1, max=30),
         reraise=True,
     )
-    def clean_batch(self, raw_names: list[str]) -> list[CleanOutput]:
+    def clean_batch(self, raw_names: list[str]) -> list[SplitOutput]:
         if not raw_names:
             return []
         prompt = build_batch_prompt(raw_names)
-        # Per-row output budget: ~40 tokens for `{cleaned, why}` plus JSON
-        # overhead. Multiplied by batch size with a floor so tiny batches
-        # still get headroom. Bounds worst-case truncation cost AND gives
-        # the API a chance to tell us early if the response would be too
-        # large (better than silently truncating the JSON array and losing
-        # outputs).
-        max_tokens = max(256, len(raw_names) * 60)
+        # Per-row output budget: ~60 tokens for `{first, last, why}` plus JSON
+        # overhead (a touch larger than the single-field name kind). Multiplied
+        # by batch size with a floor so tiny batches still get headroom.
+        max_tokens = max(256, len(raw_names) * 80)
         body = {
             "model": self.model,
             "messages": [{"role": "user", "content": prompt}],

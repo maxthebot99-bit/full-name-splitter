@@ -69,9 +69,7 @@ from full_name_splitter.sessions import (
 from full_name_splitter.settings_store import (
     ALLOWED_MODELS,
     MAX_BATCH_SIZE,
-    MAX_BATCH_SIZE_ADDRESS,
     MIN_BATCH_SIZE,
-    MIN_BATCH_SIZE_ADDRESS,
     MIN_DAILY_CAP_USD,
     settings as app_settings,
 )
@@ -88,7 +86,7 @@ from full_name_splitter.workers import (
 
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
 ALLOWED_EXTENSIONS = {".xlsx", ".csv"}
-ALLOWED_KINDS = {"company", "name", "address"}
+ALLOWED_KINDS = {"fullname"}
 EST_USD_PER_ROW = Decimal("0.000011")  # observed: ~$0.0081 / 748 rows on Grok-4-fast (2026-04-27)
 
 # Emails allowed to PUT /api/settings + see other users' run history.
@@ -126,106 +124,42 @@ limiter = Limiter(key_func=_rate_limit_key)
 
 
 def _suggest_column(kind: str, columns: list[str]) -> str | None:
-    """Heuristic: pick a column whose name looks right for this kind.
+    """Heuristic: pick a column whose name looks like a full-name field.
 
-    Two-tier matching with cross-contamination guards:
-
-    * *Strong* hints are unambiguous (e.g. "company name", "first name").
-      Exact matches win first; substring matches second.
-    * *Weak* hints are single tokens that can collide ("account" matches
-      "Account First Name", "first" matches "Firstborn"). We only consider
-      a weak hint match if the column doesn't ALSO match the other side's
-      strong hints — otherwise "Account First Name" gets correctly classed
-      as a name column instead of a company column.
+    Splitter only has one kind (``fullname``). Strong hints (exact or
+    substring match) come first; weak hints fall back to anything with
+    "name" that isn't already a first/last/middle column.
     """
-    name_strong = ["first name", "first_name", "firstname",
-                   "given name", "given_name", "givenname"]
-    name_weak = ["first"]
-    company_strong = ["company name", "company_name", "companyname",
-                      "company", "account name", "account_name", "accountname"]
-    company_weak = ["account", "organization", "organisation", "business", "brand"]
+    fullname_strong = [
+        "full name", "full_name", "fullname",
+        "contact name", "contact_name", "contactname",
+        "name", "person name", "person_name",
+        "display name", "display_name", "displayname",
+    ]
+    # "first name" / "last name" columns should NOT be suggested — those
+    # are split outputs, not the unified input the splitter wants.
+    name_negative = ["first name", "first_name", "firstname",
+                     "last name", "last_name", "lastname",
+                     "middle name", "middle_name", "middlename"]
 
-    lowered = [(c, c.lower()) for c in columns]
+    lowered = [(c, c.lower().strip()) for c in columns]
 
-    def looks_like_name(low: str) -> bool:
-        return any(h in low for h in name_strong + name_weak)
+    def is_negative(low: str) -> bool:
+        return any(h in low for h in name_negative)
 
-    def looks_like_company(low: str) -> bool:
-        return any(h in low for h in company_strong)
-
-    if kind == "company":
+    if kind == "fullname":
         # Tier 1: exact match on a strong hint.
-        for h in company_strong:
+        for h in fullname_strong:
             for c, low in lowered:
                 if low == h:
                     return c
-        # Tier 2: substring on a strong hint, excluding name-flavored columns.
-        for h in company_strong:
+        # Tier 2: substring match, excluding split-field columns.
+        for h in fullname_strong:
             for c, low in lowered:
-                if h in low and not looks_like_name(low):
-                    return c
-        # Tier 3: weak hints, excluding name-flavored columns.
-        for h in company_weak:
-            for c, low in lowered:
-                if h in low and not looks_like_name(low):
+                if h in low and not is_negative(low):
                     return c
         return None
-
-    if kind == "name":
-        for h in name_strong:
-            for c, low in lowered:
-                if low == h:
-                    return c
-        for h in name_strong:
-            for c, low in lowered:
-                if h in low:
-                    return c
-        # Weak: avoid "first" matching a column that's clearly a company.
-        for h in name_weak:
-            for c, low in lowered:
-                if h in low and not looks_like_company(low):
-                    return c
-        return None
-
-    # kind == "address" — single-column suggestion picks the website column.
-    # The actual two-column suggestion lives in _suggest_address_columns().
-    if kind == "address":
-        pair = _suggest_address_columns(columns)
-        return pair[1]  # website column is the "primary" input
     return None
-
-
-def _suggest_address_columns(columns: list[str]) -> tuple[str | None, str | None]:
-    """Pick (business_name_column, website_url_column) from a CSV's headers.
-
-    Address is the only kind that needs TWO input columns. Returns a pair so
-    the upload UI can pre-populate both pickers.
-    """
-    name_strong = ["company name", "company_name", "companyname",
-                   "business name", "business_name", "businessname",
-                   "account name", "account_name", "accountname",
-                   "organization", "organisation", "name"]
-    website_strong = ["company website", "company_website", "companywebsite",
-                      "website url", "website_url", "websiteurl",
-                      "website", "domain", "company_domain", "company domain",
-                      "url", "site", "homepage", "web"]
-
-    lowered = [(c, c.lower().strip()) for c in columns if c]
-
-    def find(strong: list[str]) -> str | None:
-        # Exact match first.
-        for h in strong:
-            for c, low in lowered:
-                if low == h:
-                    return c
-        # Substring match.
-        for h in strong:
-            for c, low in lowered:
-                if h in low:
-                    return c
-        return None
-
-    return find(name_strong), find(website_strong)
 
 
 # ─── Lifespan ───────────────────────────────────────────────────────────────
@@ -367,14 +301,8 @@ class RerunRowBody(BaseModel):
 
 class SettingsPatch(BaseModel):
     daily_cap_usd: float | None = Field(None, ge=0, le=float(SPEND_CAP_USD_PER_DAY))
-    batch_size_company: int | None = Field(None, ge=MIN_BATCH_SIZE, le=MAX_BATCH_SIZE)
-    batch_size_name: int | None = Field(None, ge=MIN_BATCH_SIZE, le=MAX_BATCH_SIZE)
-    batch_size_address: int | None = Field(
-        None, ge=MIN_BATCH_SIZE_ADDRESS, le=MAX_BATCH_SIZE_ADDRESS
-    )
-    model_company: str | None = None
-    model_name: str | None = None
-    model_address: str | None = None
+    batch_size_fullname: int | None = Field(None, ge=MIN_BATCH_SIZE, le=MAX_BATCH_SIZE)
+    model_fullname: str | None = None
 
 
 # ─── Routes ─────────────────────────────────────────────────────────────────
@@ -552,12 +480,7 @@ async def list_columns(request: Request, sid: str = PathParam(...)) -> dict:
         "row_count_estimate": meta.row_count_estimate,
         "suggested": suggested,
     }
-    # Address kind needs TWO column suggestions — add a paired hint so the
-    # frontend column-picker can pre-populate both dropdowns. Company/name
-    # don't get this field; the frontend ignores it for those kinds.
-    if sess.kind == "address":
-        name_col, website_col = _suggest_address_columns(list(meta.columns))
-        body["suggested_pair"] = {"name": name_col, "website": website_col}
+    # Splitter only has the ``fullname`` kind — single suggested column.
     return body
 
 
@@ -749,54 +672,6 @@ async def preview(
 
     vals = df_chunk[target_col].astype(str).tolist()[:n]
 
-    # Address kind: also pull the secondary column (business-name) and return
-    # AddressRow-shaped pending rows so the frontend table can show inputs
-    # before the run starts. Frontend matches on the AddressRow shape via
-    # the slice's `kind`.
-    if sess.kind == "address" and body.secondary_column:
-        secondary_wanted = body.secondary_column.strip()
-        secondary_low = secondary_wanted.lower()
-        secondary_col: str | None = None
-        for c in meta.columns:
-            if (
-                c == secondary_wanted
-                or c.strip() == secondary_wanted
-                or c.lower() == secondary_low
-            ):
-                secondary_col = c
-                break
-        if secondary_col is None or secondary_col not in df_chunk.columns:
-            raise HTTPException(
-                400, f"unknown secondary column: {body.secondary_column!r}"
-            )
-        names = df_chunk[secondary_col].astype(str).tolist()[:n]
-        # Pad shorter list with empty strings to align lengths.
-        while len(names) < len(vals):
-            names.append("")
-        rows = [
-            {
-                "n": i + 1,
-                "business_name": (names[i] or "").strip(),
-                "website_url": (vals[i] or "").strip(),
-                "street": "",
-                "city": "",
-                "state": "",
-                "zip": "",
-                "country": "",
-                "source_url": "",
-                "confidence": 0.0,
-                "error": "",
-                "status": "pending",
-                "flags": [],
-            }
-            for i in range(len(vals))
-        ]
-        sess.selected_column = target_col
-        audit("preview", email=_email_from_request(request), session_id=sid,
-              kind=sess.kind, column=target_col, count=len(rows),
-              secondary_column=secondary_col)
-        return {"column": target_col, "rows": rows}
-
     rows = [
         {
             "n": i + 1,
@@ -983,9 +858,6 @@ async def download_past_run(request: Request, run_id: str = PathParam(...)):
 @app.get("/api/settings")
 @limiter.limit("60/minute")
 async def get_settings(request: Request) -> dict:
-    from full_name_splitter.settings_store import (
-        ALLOWED_MODELS_OPENROUTER as _ALLOWED_OPENROUTER,
-    )
     s = app_settings().get()
     return {
         **s.to_dict(),
@@ -993,11 +865,8 @@ async def get_settings(request: Request) -> dict:
         "hard_cap_usd": float(SPEND_CAP_USD_PER_DAY),
         "min_batch_size": MIN_BATCH_SIZE,
         "max_batch_size": MAX_BATCH_SIZE,
-        "min_batch_size_address": MIN_BATCH_SIZE_ADDRESS,
-        "max_batch_size_address": MAX_BATCH_SIZE_ADDRESS,
         "min_daily_cap_usd": MIN_DAILY_CAP_USD,
         "allowed_models": list(ALLOWED_MODELS),
-        "allowed_models_address": list(_ALLOWED_OPENROUTER),
     }
 
 

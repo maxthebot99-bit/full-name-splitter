@@ -1,19 +1,17 @@
-"""Pure-Grok pipeline: every raw cell from the sheet is sent to Grok.
+"""Pure-Grok splitter pipeline: every raw cell from the sheet is sent to Grok.
 
-Design intent (locked by Jason, Apr 2026):
+Forked from the cleaners-hub ``name`` kind. The shape change vs. that
+pipeline: Grok returns a ``(first, last, reason)`` triple per row instead
+of a single ``(cleaned, reason)`` pair. Everything else — no app-side
+judgment, no cache, blanks-go-to-Grok-too — is preserved.
 
 - **No app-side judgment.** The app does not decide what is or isn't a
-  company name. It does not strip, truncate, fix, or flag the input. It
-  does not consult ``nulls.json`` to veto rows, and it does not cap
-  pathological lengths. Grok is the sole decision-maker.
-- **Blanks go to Grok too.** An empty cell is still "what's in the
-  sheet." The authoritative prompt explicitly handles "blank or null"
-  → return null, so Grok will do the right thing; the cost is a few
-  tokens for the wrapper.
-- **No cache.** Every row hits Grok fresh every run. Jason's call
-  (Apr 2026): the app should never replay a prior decision, even Grok's
-  own. If the prompt nudges or the data shifts, we want Grok to re-judge
-  end-to-end. The cost tradeoff is accepted.
+  valid full name. It does not strip, truncate, fix, or flag the input.
+  It does not cap pathological lengths app-side. Grok is the sole
+  decision-maker.
+- **Blanks go to Grok too.** An empty cell is still "what's in the sheet."
+  The authoritative prompt explicitly handles blank/null → return null/null.
+- **No cache.** Every row hits Grok fresh every run.
 """
 from __future__ import annotations
 
@@ -28,8 +26,7 @@ from .llm.base import Provider
 @dataclass
 class PipelineStats:
     total: int = 0
-    # `null_rows` here means "Grok returned null for this row". It does
-    # NOT count app-side short-circuits because there aren't any anymore.
+    # `null_rows` here means "Grok returned (None, None) for this row".
     null_rows: int = 0
     # Kept for backward-compat with the old hybrid reporter; always 0 now.
     leakage_rows: int = 0
@@ -39,6 +36,20 @@ class PipelineStats:
     completion_tokens: int = 0
     api_calls: int = 0
     actual_cost: float = 0.0
+
+
+def _combined_view(first: str | None, last: str | None) -> str:
+    """Single-string mirror for the SSE/UI plumbing.
+
+    The original ``name`` pipeline stored its single cleaned value in
+    ``ctx.current``; ``workers._ctx_to_row`` reads that to populate the
+    row payload's ``clean`` field. The splitter has two parts, so we
+    collapse them into "first last" (or just one if the other is None)
+    for that legacy path. The writer never reads ``current`` — it uses
+    ``first`` / ``last`` directly.
+    """
+    parts = [p for p in (first, last) if p]
+    return " ".join(parts)
 
 
 def run_row(raw: str, settings: Settings) -> NameContext:
@@ -62,7 +73,7 @@ def route_rows(
 ) -> tuple[list[NameContext], PipelineStats]:
     """Send every row through Grok. No cache, no replay — each run is fresh.
 
-    rows: list of (row_index, raw_name).
+    rows: list of (row_index, raw_fullname).
     provider: Grok provider. Required — without it, rows are flagged
         ``NEEDS_MANUAL_REVIEW`` and passed through unchanged.
     progress_cb: optional callable(done, total) invoked after each batch.
@@ -89,7 +100,7 @@ def route_rows(
 
     # Pass-through. Every raw cell becomes a context and joins the LLM
     # queue unless the provider is missing. No blank check, no junk
-    # check, no length cap — Jason wants Grok to see the sheet as-is.
+    # check, no length cap.
     for idx, raw in rows:
         ctx = run_row(raw, settings)
         results[idx] = ctx
@@ -115,19 +126,25 @@ def route_rows(
                     ctx.flag("LLM_UNAVAILABLE")
                     batch_done.append((idx, ctx))
             else:
-                for (idx, raw), (cleaned, reason) in zip(batch, outs, strict=True):
+                for (idx, raw), (first, last, reason) in zip(batch, outs, strict=True):
                     ctx = results[idx]
                     ctx.llm_prompt = raw
-                    ctx.llm_response = cleaned if cleaned is not None else "null"
-                    ctx.llm_reason = (reason or None)
-                    ctx.confidence = 1.0
-                    if cleaned is None:
+                    ctx.first = first
+                    ctx.last = last
+                    # Compact textual record of the LLM's verdict — used by
+                    # NameContext.route to distinguish "llm answered" from
+                    # "never ran". "null" sentinel preserves the legacy shape.
+                    if first is None and last is None:
                         ctx.is_null = True
-                        ctx.current = "null"
+                        ctx.current = ""
+                        ctx.llm_response = "null"
                         stats.null_rows += 1
                     else:
                         ctx.is_null = False
-                        ctx.current = cleaned
+                        ctx.current = _combined_view(first, last)
+                        ctx.llm_response = ctx.current or "null"
+                    ctx.llm_reason = (reason or None)
+                    ctx.confidence = 1.0
                     stats.llm_rows += 1
                     batch_done.append((idx, ctx))
             if progress_cb:
