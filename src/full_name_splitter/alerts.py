@@ -29,8 +29,8 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 
-from cleaners_hub.secrets import get_resend_key
-from cleaners_hub.spend import _data_dir
+from full_name_splitter.secrets import get_resend_key
+from full_name_splitter.spend import _data_dir
 
 # Recipient must match the Resend account owner email until a domain is
 # verified at resend.com/domains — the sandbox sender (onboarding@resend.dev)
@@ -45,7 +45,7 @@ ALERT_FROM = "onboarding@resend.dev"  # Resend sandbox; works without DNS.
 # $1 was too sensitive (a 91k-row file is normal-ish for sales lists).
 COSTLY_RUN_THRESHOLD_USD = Decimal("5.00")
 
-_log = logging.getLogger("cleaners_hub.alerts")
+_log = logging.getLogger("full_name_splitter.alerts")
 
 
 class AlertSender:
@@ -138,13 +138,13 @@ class AlertSender:
         if not self._claim_once(bucket):
             return
         self._send(
-            subject=f"[cleaners-hub] first login today by {email}",
+            subject=f"[full-name-splitter] first login today by {email}",
             body=(
                 f"Email: {email}\n"
                 f"Date (UTC): {today}\n"
-                f"App: cleaners.maxcommandcenter.com\n\n"
+                f"App: full-name-splitter.maxcommandcenter.com\n\n"
                 "If this wasn't you, hit the kill switch:\n"
-                "  one.dash.cloudflare.com → Access → Applications → cleaners-hub\n"
+                "  one.dash.cloudflare.com → Access → Applications → full-name-splitter\n"
                 "  → Edit policy → Action: Block → Save\n"
             ),
         )
@@ -171,7 +171,7 @@ class AlertSender:
         )
         self._send(
             subject=(
-                f"[cleaners-hub] {kind} run started by {email} "
+                f"[full-name-splitter] {kind} run started by {email} "
                 f"— {effective:,} rows, ~${est_cost_usd:.4f}"
             ),
             body=(
@@ -203,7 +203,7 @@ class AlertSender:
         rate = (cost_usd / row_count) if row_count else Decimal(0)
         self._send(
             subject=(
-                f"[cleaners-hub] {kind} run done — {row_count:,} rows, "
+                f"[full-name-splitter] {kind} run done — {row_count:,} rows, "
                 f"${cost_usd:.4f}"
             ),
             body=(
@@ -222,7 +222,7 @@ class AlertSender:
         if cost_usd <= COSTLY_RUN_THRESHOLD_USD:
             return
         self._send(
-            subject=f"[cleaners-hub] HIGH-COST run ${cost_usd:.2f} ({kind}, {row_count} rows)",
+            subject=f"[full-name-splitter] HIGH-COST run ${cost_usd:.2f} ({kind}, {row_count} rows)",
             body=(
                 f"Run completed with cost ${cost_usd:.2f} (above ${COSTLY_RUN_THRESHOLD_USD} threshold)\n"
                 f"Email: {email or '<unknown>'}\n"
@@ -238,7 +238,7 @@ class AlertSender:
         if not self._claim_once(bucket):
             return
         self._send(
-            subject=f"[cleaners-hub] DAILY SPEND CAP HIT (${cap_usd:.2f})",
+            subject=f"[full-name-splitter] DAILY SPEND CAP HIT (${cap_usd:.2f})",
             body=(
                 f"Today's UTC Grok spend: ${today_total_usd:.2f}\n"
                 f"Cap: ${cap_usd:.2f}\n"
@@ -259,10 +259,10 @@ class AlertSender:
                 {
                     "from": ALERT_FROM,
                     "to": [ALERT_TO],
-                    "subject": "[cleaners-hub] test ping",
+                    "subject": "[full-name-splitter] test ping",
                     "text": (
                         f"Triggered by: {triggered_by}\n"
-                        f"App: cleaners.maxcommandcenter.com\n"
+                        f"App: full-name-splitter.maxcommandcenter.com\n"
                         f"Sender: {ALERT_FROM} (Resend sandbox)\n"
                         f"Recipient: {ALERT_TO}\n\n"
                         "If you got this, the Resend wiring is working end-to-end."

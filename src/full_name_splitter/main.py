@@ -54,19 +54,19 @@ from pydantic import BaseModel, Field
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-from cleaners_hub import __version__
-from cleaners_hub.alerts import alerter
-from cleaners_hub.audit import audit, setup_logging
-from cleaners_hub.history import history
-from cleaners_hub.middleware import CSRFCheckMiddleware
-from cleaners_hub.sessions import (
+from full_name_splitter import __version__
+from full_name_splitter.alerts import alerter
+from full_name_splitter.audit import audit, setup_logging
+from full_name_splitter.history import history
+from full_name_splitter.middleware import CSRFCheckMiddleware
+from full_name_splitter.sessions import (
     Session,
     is_valid_sid,
     session_public_dict,
     store,
     idle_sweeper_loop,
 )
-from cleaners_hub.settings_store import (
+from full_name_splitter.settings_store import (
     ALLOWED_MODELS,
     MAX_BATCH_SIZE,
     MAX_BATCH_SIZE_ADDRESS,
@@ -75,9 +75,9 @@ from cleaners_hub.settings_store import (
     MIN_DAILY_CAP_USD,
     settings as app_settings,
 )
-from cleaners_hub.spend import SPEND_CAP_USD_PER_DAY, SpendTracker
-from cleaners_hub.streaming import sse_event_stream
-from cleaners_hub.workers import (
+from full_name_splitter.spend import SPEND_CAP_USD_PER_DAY, SpendTracker
+from full_name_splitter.streaming import sse_event_stream
+from full_name_splitter.workers import (
     apply_override,
     dry_run_sample,
     rerun_one_row,
@@ -107,7 +107,7 @@ ADMIN_EMAILS: frozenset[str] = frozenset({"jazif@benchmarkintl.com"})
 def _is_admin(email: str | None) -> bool:
     return email is not None and email.lower() in {e.lower() for e in ADMIN_EMAILS}
 
-_log = logging.getLogger("cleaners_hub.main")
+_log = logging.getLogger("full_name_splitter.main")
 _spend = SpendTracker()
 
 
@@ -257,7 +257,7 @@ async def lifespan(app: FastAPI):
 # ─── App ────────────────────────────────────────────────────────────────────
 
 app = FastAPI(
-    title="cleaners-hub",
+    title="full-name-splitter",
     version=__version__,
     docs_url=None,        # OpenAPI/Swagger disabled in prod (info disclosure)
     redoc_url=None,
@@ -272,7 +272,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # CORS: same-origin only. Cloudflare Tunnel rewrites Origin to the public host.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://cleaners.maxcommandcenter.com", "http://localhost:5173"],
+    allow_origins=["https://full-name-splitter.maxcommandcenter.com", "http://localhost:5173"],
     allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["X-Requested-With", "Content-Type"],
     allow_credentials=True,
@@ -508,7 +508,7 @@ async def list_columns(request: Request, sid: str = PathParam(...)) -> dict:
 
     # Lazy import to avoid loading pandas at startup
     import importlib
-    io_reader = importlib.import_module(f"cleaners_hub.cleaners.{sess.kind}.io.reader")
+    io_reader = importlib.import_module(f"full_name_splitter.cleaners.{sess.kind}.io.reader")
     try:
         meta = io_reader.inspect(sess.upload_path)
     except Exception as e:
@@ -733,7 +733,7 @@ async def preview(
 
     n = body.count
     import importlib
-    io_reader = importlib.import_module(f"cleaners_hub.cleaners.{sess.kind}.io.reader")
+    io_reader = importlib.import_module(f"full_name_splitter.cleaners.{sess.kind}.io.reader")
 
     try:
         chunks = io_reader.read_chunks(meta, target_col, chunk_rows=max(n, 100))
@@ -960,7 +960,7 @@ async def download_past_run(request: Request, run_id: str = PathParam(...)):
     # path, but if the DB ever gets a tampered row we don't want the
     # download endpoint serving arbitrary disk files. Confine to the
     # outputs root.
-    from cleaners_hub.sessions import _outputs_root
+    from full_name_splitter.sessions import _outputs_root
     try:
         out.resolve().relative_to(_outputs_root().resolve())
     except (ValueError, OSError):
@@ -983,7 +983,7 @@ async def download_past_run(request: Request, run_id: str = PathParam(...)):
 @app.get("/api/settings")
 @limiter.limit("60/minute")
 async def get_settings(request: Request) -> dict:
-    from cleaners_hub.settings_store import (
+    from full_name_splitter.settings_store import (
         ALLOWED_MODELS_OPENROUTER as _ALLOWED_OPENROUTER,
     )
     s = app_settings().get()
@@ -1068,9 +1068,9 @@ else:
     @app.get("/", include_in_schema=False)
     async def root_placeholder() -> HTMLResponse:
         return HTMLResponse(
-            "<!doctype html><html><head><title>cleaners-hub</title></head>"
+            "<!doctype html><html><head><title>full-name-splitter</title></head>"
             "<body style='font-family:sans-serif;padding:2rem'>"
-            "<h1>cleaners-hub</h1>"
+            "<h1>full-name-splitter</h1>"
             f"<p>API up (v{__version__}). UI bundle not yet built.</p>"
             "<p>Try <code>GET /api/health</code>.</p>"
             "</body></html>"
@@ -1078,12 +1078,12 @@ else:
 
 
 def run() -> None:
-    """Entrypoint for ``cleaners-hub`` console script. Used by deploy/start.sh."""
+    """Entrypoint for ``full-name-splitter`` console script. Used by deploy/start.sh."""
     import uvicorn
 
     port = int(os.environ.get("PORT", "8181"))
     uvicorn.run(
-        "cleaners_hub.main:app",
+        "full_name_splitter.main:app",
         host="127.0.0.1",
         port=port,
         workers=1,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from ..config import Settings
 from ..errors import ProviderAuthError
-from cleaners_hub.secrets import get_key
+from full_name_splitter.secrets import get_key
 from ._openai_compat import OpenAICompatibleClient
 
 

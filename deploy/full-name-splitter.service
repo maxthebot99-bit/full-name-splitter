@@ -1,4 +1,4 @@
-# Systemd unit template for cleaners-hub.
+# Systemd unit template for full-name-splitter.
 #
 # /usr/local/bin/app may rewrite this file at deploy time (e.g. to inject
 # the auto-assigned $PORT and the WorkingDirectory). The hardening
@@ -10,7 +10,7 @@
 #   sudo systemd-creds encrypt --name=resend-api-key - /etc/credstore.encrypted/resend-api-key
 
 [Unit]
-Description=cleaners-hub web app (Companies + First Names cleaner)
+Description=full-name-splitter web app (Companies + First Names cleaner)
 After=network-online.target
 Wants=network-online.target
 
@@ -18,12 +18,12 @@ Wants=network-online.target
 Type=simple
 User=www-data
 Group=www-data
-WorkingDirectory=/var/www/dashboard/apps/cleaners-hub
+WorkingDirectory=/var/www/dashboard/apps/full-name-splitter
 Environment=PORT=8181
 Environment=CLEANERS_HUB_ENV=prod
-Environment=CLEANERS_HUB_DATA_DIR=/var/lib/cleaners-hub
-Environment=CLEANERS_HUB_SESSIONS_DIR=/var/tmp/cleaners-hub/sessions
-# Credentials are decrypted into /run/credentials/cleaners-hub.service/<name>
+Environment=CLEANERS_HUB_DATA_DIR=/var/lib/full-name-splitter
+Environment=CLEANERS_HUB_SESSIONS_DIR=/var/tmp/full-name-splitter/sessions
+# Credentials are decrypted into /run/credentials/full-name-splitter.service/<name>
 # at unit start; we expose them to the app via the same env names the Python
 # code already looks at (XAI_API_KEY_FILE, RESEND_API_KEY_FILE,
 # OPENROUTER_API_KEY_FILE).
@@ -36,7 +36,7 @@ Environment=XAI_API_KEY_FILE=%d/xai-api-key
 Environment=RESEND_API_KEY_FILE=%d/resend-api-key
 Environment=OPENROUTER_API_KEY_FILE=%d/openrouter-api-key
 
-ExecStart=/var/www/dashboard/apps/cleaners-hub/deploy/start.sh
+ExecStart=/var/www/dashboard/apps/full-name-splitter/deploy/start.sh
 Restart=on-failure
 RestartSec=10
 # Stop deadline: SIGTERM, then SIGKILL after this. uvicorn waits for
@@ -49,7 +49,7 @@ TimeoutStopSec=20
 KillSignal=SIGTERM
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=cleaners-hub
+SyslogIdentifier=full-name-splitter
 
 # ─── Hardening ───────────────────────────────────────────────────────
 # Mirrors kbot's pattern; tightened for an internet-exposed app.
@@ -62,7 +62,7 @@ SyslogIdentifier=cleaners-hub
 #     setrlimit, sched_setaffinity that numpy uses on import)
 # If a future Python upgrade makes them safe again, re-enable here.
 #
-# ReadWritePaths=/var/tmp/cleaners-hub was also tried and removed: with
+# ReadWritePaths=/var/tmp/full-name-splitter was also tried and removed: with
 # PrivateTmp=true, /var/tmp is the unit's private namespace anyway, so
 # whitelisting a subpath there fails namespace setup if the host path
 # doesn't exist yet (which it doesn't on first start).
@@ -84,9 +84,9 @@ SystemCallFilter=@system-service
 # strict ProtectSystem makes /var/lib read-only by default; whitelist the
 # dir we actually need to write spend.sqlite3 into. (PrivateTmp covers
 # /var/tmp without an explicit ReadWritePaths.)
-ReadWritePaths=/var/lib/cleaners-hub
-StateDirectory=cleaners-hub
-RuntimeDirectory=cleaners-hub
+ReadWritePaths=/var/lib/full-name-splitter
+StateDirectory=full-name-splitter
+RuntimeDirectory=full-name-splitter
 
 # ─── Egress firewall (SSRF mitigation, 2026-05-14) ──────────────────
 # The address-tab fetch_pages() worker accepts user-supplied URLs from

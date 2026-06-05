@@ -3,7 +3,7 @@
 Mirrors the legacy ``shell.py:_run_worker`` from the desktop apps but pushes
 events through ``streaming.Pusher`` (SSE) instead of the PyWebView JS
 bridge. The pipeline + IO modules are vendored per-cleaner under
-``cleaners_hub.cleaners.{company,name}``; this worker dispatches to the
+``full_name_splitter.cleaners.{company,name}``; this worker dispatches to the
 right one based on ``kind``.
 
 Per-batch flow:
@@ -29,18 +29,18 @@ from typing import Any
 
 import pandas as pd
 
-from cleaners_hub.alerts import alerter
-from cleaners_hub.audit import audit
-from cleaners_hub.history import history
-from cleaners_hub.sessions import Session
-from cleaners_hub.settings_store import settings as app_settings
-from cleaners_hub.spend import (
+from full_name_splitter.alerts import alerter
+from full_name_splitter.audit import audit
+from full_name_splitter.history import history
+from full_name_splitter.sessions import Session
+from full_name_splitter.settings_store import settings as app_settings
+from full_name_splitter.spend import (
     SPEND_CAP_USD_PER_DAY,
     SpendTracker,
 )
-from cleaners_hub.streaming import Pusher
+from full_name_splitter.streaming import Pusher
 
-_log = logging.getLogger("cleaners_hub.workers")
+_log = logging.getLogger("full_name_splitter.workers")
 
 
 def _modules_for(kind: str):
@@ -52,7 +52,7 @@ def _modules_for(kind: str):
     """
     if kind not in ("company", "name"):
         raise ValueError(f"unknown kind for _modules_for: {kind!r}")
-    base = f"cleaners_hub.cleaners.{kind}"
+    base = f"full_name_splitter.cleaners.{kind}"
     pipeline = importlib.import_module(f"{base}.pipeline")
     io_reader = importlib.import_module(f"{base}.io.reader")
     io_writer = importlib.import_module(f"{base}.io.writer")
@@ -70,7 +70,7 @@ def _modules_for_address():
     different LLM provider (OpenRouter, not xAI), a multi-column output
     writer, and AddressContext instead of NameContext.
     """
-    base = "cleaners_hub.cleaners.address"
+    base = "full_name_splitter.cleaners.address"
     pipeline = importlib.import_module(f"{base}.pipeline")
     io_reader = importlib.import_module(f"{base}.io.reader")
     io_writer = importlib.import_module(f"{base}.io.writer")
@@ -205,7 +205,7 @@ def _ensure_partial_state(session: Session, column: str) -> bool:
     if session.source_df is None:
         try:
             io_reader = importlib.import_module(
-                f"cleaners_hub.cleaners.{session.kind}.io.reader"
+                f"full_name_splitter.cleaners.{session.kind}.io.reader"
             )
             parts = list(io_reader.read_chunks(meta, column, chunk_rows=10_000))
             session.source_df = (
@@ -234,7 +234,7 @@ def _passthrough_context(kind: str, original: str):
     flags ``route="pending"`` so it's clearly distinguishable from a real
     Grok answer.
     """
-    types_mod = importlib.import_module(f"cleaners_hub.cleaners.{kind}.types")
+    types_mod = importlib.import_module(f"full_name_splitter.cleaners.{kind}.types")
     Ctx = types_mod.NameContext  # both kinds use NameContext
     return Ctx(
         original=original,
@@ -682,7 +682,7 @@ def spawn_run(session: Session, *, column: str, row_limit: int | None,
 
 def _passthrough_address_context(business_name: str, website_url: str):
     """Build an unprocessed AddressContext (e.g. when row_limit cut us off)."""
-    types_mod = importlib.import_module("cleaners_hub.cleaners.address.types")
+    types_mod = importlib.import_module("full_name_splitter.cleaners.address.types")
     return types_mod.AddressContext(
         business_name=business_name,
         website_url=website_url,

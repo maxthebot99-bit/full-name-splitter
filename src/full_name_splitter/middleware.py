@@ -3,7 +3,7 @@
 Cloudflare Access blocks most cross-origin attacks at the edge, but a stolen
 JWT cookie used from a malicious tab in the user's authenticated browser
 would otherwise sail through. Requiring a custom header (``X-Requested-With:
-cleaners-hub``) on every /api/* request closes that vector — cross-origin
+full-name-splitter``) on every /api/* request closes that vector — cross-origin
 JS cannot add custom headers without a preflight, and our CORS rejects
 preflights from unknown origins.
 
@@ -17,7 +17,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 CSRF_HEADER_NAME = "x-requested-with"
-CSRF_HEADER_VALUE = "cleaners-hub"
+CSRF_HEADER_VALUE = "full-name-splitter"
 
 
 class CSRFCheckMiddleware(BaseHTTPMiddleware):

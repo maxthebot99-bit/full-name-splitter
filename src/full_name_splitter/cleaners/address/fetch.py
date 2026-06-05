@@ -30,7 +30,7 @@ import httpx
 from bs4 import BeautifulSoup
 from curl_cffi.requests import AsyncSession
 
-_log = logging.getLogger("cleaners_hub.address.fetch")
+_log = logging.getLogger("full_name_splitter.address.fetch")
 
 
 IMPERSONATE = "chrome124"
@@ -245,7 +245,7 @@ async def _fetch_url(
 ) -> tuple[str | None, str]:
     # CSO 2026-05-14 (SSRF defense in depth): reject URLs that resolve to
     # private/loopback/link-local IPs before issuing the request. The
-    # systemd unit (see deploy/cleaners-hub.service) blocks most internal
+    # systemd unit (see deploy/full-name-splitter.service) blocks most internal
     # destinations at the network layer; this closes loopback explicitly
     # (left open at the systemd layer for unit-internal health checks).
     safe, reason = _is_safe_url(url)

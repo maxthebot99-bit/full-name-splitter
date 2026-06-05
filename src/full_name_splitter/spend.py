@@ -9,7 +9,7 @@ to the UI.
 The cap lives in code, not in env. Bumping the cap requires a code edit +
 deploy — a compromised .env or a leaked CF Access JWT cannot raise it.
 
-DB location: $CLEANERS_HUB_DATA_DIR/spend.sqlite3 (default /var/lib/cleaners-hub).
+DB location: $CLEANERS_HUB_DATA_DIR/spend.sqlite3 (default /var/lib/full-name-splitter).
 This must be a path that survives systemd restarts, so it lives outside the
 unit's PrivateTmp. The unit's ReadWritePaths must include this dir.
 """
@@ -38,7 +38,7 @@ SPEND_CAP_USD_PER_DAY: Decimal = Decimal("100.00")
 XAI_INPUT_USD_PER_1K: Decimal = Decimal("0.0002")
 XAI_OUTPUT_USD_PER_1K: Decimal = Decimal("0.0005")
 
-_DEFAULT_DATA_DIR = Path("/var/lib/cleaners-hub")
+_DEFAULT_DATA_DIR = Path("/var/lib/full-name-splitter")
 
 
 def _data_dir() -> Path:

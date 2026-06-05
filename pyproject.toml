@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "cleaners-hub"
+name = "full-name-splitter"
 version = "0.1.0"
-description = "Web app for cleaning company names and first names via Grok. Deploys to cleaners.maxcommandcenter.com behind Cloudflare Access."
+description = "Splits a single Full Name column into clean First Name + Last Name via Grok. Deploys to full-name-splitter.maxcommandcenter.com behind Cloudflare Access."
 requires-python = ">=3.11"
 readme = "README.md"
 authors = [{ name = "Benchmark International" }]
@@ -19,7 +19,7 @@ dependencies = [
     "openpyxl>=3.1",
     "ftfy>=6.2",
     # Unidecode was declared but never imported — and it's GPL-2.0+, which
-    # would attach combined-work obligations if cleaners-hub ever moved
+    # would attach combined-work obligations if full-name-splitter ever moved
     # toward distribution. Dropped 2026-04-28; re-add with a license check
     # if a real need shows up.
     "charset-normalizer>=3.3",
@@ -48,13 +48,13 @@ dev = [
 ]
 
 [project.scripts]
-cleaners-hub = "cleaners_hub.main:run"
+full-name-splitter = "full_name_splitter.main:run"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-cleaners_hub = ["ui_dist/**/*"]
+full_name_splitter = ["ui_dist/**/*"]
 
 # Supply-chain hardening — refuse to install any package version published in the
 # last 7 days. See ~/vault/20-areas/security/supply-chain-hardening.md.

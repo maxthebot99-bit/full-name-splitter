@@ -4,13 +4,13 @@ After=network-online.target
 Wants=network-online.target
 # Don't pile up runs if a previous deploy is still going (shouldn't happen
 # but defense in depth — install-vps.sh is ~5-10s).
-ConditionPathExists=/var/www/dashboard/apps/cleaners-hub/deploy/auto-deploy.sh
+ConditionPathExists=/var/www/dashboard/apps/full-name-splitter/deploy/auto-deploy.sh
 
 [Service]
 Type=oneshot
-WorkingDirectory=/home/kianna/github-repos/cleaners-hub
-ExecStart=/var/www/dashboard/apps/cleaners-hub/deploy/auto-deploy.sh
-SyslogIdentifier=cleaners-hub-autodeploy
+WorkingDirectory=/home/kianna/github-repos/full-name-splitter
+ExecStart=/var/www/dashboard/apps/full-name-splitter/deploy/auto-deploy.sh
+SyslogIdentifier=full-name-splitter-autodeploy
 # Run as root so the script can write to /var/www, /etc/systemd/system,
 # and call systemctl. install-vps.sh assumes root anyway.
 User=root

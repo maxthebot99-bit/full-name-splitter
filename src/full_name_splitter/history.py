@@ -7,7 +7,7 @@ and alerts.sqlite3).
 The history serves three purposes:
   1. Browse past runs in the UI (file, kind, rows, cost, when, who)
   2. Re-download cleaned outputs from prior runs (output_path points at the
-     persistent file under /var/lib/cleaners-hub/outputs/)
+     persistent file under /var/lib/full-name-splitter/outputs/)
   3. Audit trail — joins with the journalctl audit log via run_id (== sid)
 
 Scoping: all authorized users see all runs. Cloudflare Access already
@@ -24,9 +24,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from cleaners_hub.spend import _data_dir
+from full_name_splitter.spend import _data_dir
 
-_log = logging.getLogger("cleaners_hub.history")
+_log = logging.getLogger("full_name_splitter.history")
 
 
 def _ts() -> str:

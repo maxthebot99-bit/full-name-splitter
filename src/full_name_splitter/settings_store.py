@@ -19,9 +19,9 @@ from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
-from cleaners_hub.spend import SPEND_CAP_USD_PER_DAY, _data_dir
+from full_name_splitter.spend import SPEND_CAP_USD_PER_DAY, _data_dir
 
-_log = logging.getLogger("cleaners_hub.settings")
+_log = logging.getLogger("full_name_splitter.settings")
 
 # Allowed model strings, per kind. Company/name use xAI Grok; address uses
 # OpenRouter Llama (different vendor, different cost structure, different

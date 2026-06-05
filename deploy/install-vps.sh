@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install / re-install cleaners-hub on the VPS.
+# Install / re-install full-name-splitter on the VPS.
 #
 # Idempotent: run as many times as you want. On a fresh VPS it does the full
 # install (clone, venv, systemd unit, cloudflared ingress, DNS CNAME). On a
@@ -15,17 +15,17 @@
 #   3. CF API token + Zone ID planted at /etc/credstore.encrypted/{cf-api-token,cf-zone-id}
 #
 # Usage:
-#   sudo /var/www/dashboard/apps/cleaners-hub/deploy/install-vps.sh
+#   sudo /var/www/dashboard/apps/full-name-splitter/deploy/install-vps.sh
 #
 # Or, on a fresh VPS where the repo isn't cloned yet:
-#   sudo bash <(curl -s https://raw.githubusercontent.com/maxthebot99-bit/cleaners-hub/main/deploy/install-vps.sh)
+#   sudo bash <(curl -s https://raw.githubusercontent.com/maxthebot99-bit/full-name-splitter/main/deploy/install-vps.sh)
 #   (requires github-pat-askpass for the private repo clone)
 
 set -euo pipefail
 
 # ─── tunables ────────────────────────────────────────────────────────────────
 
-APP_NAME="cleaners-hub"
+APP_NAME="full-name-splitter"
 SUBDOMAIN="cleaners"
 DOMAIN="maxcommandcenter.com"
 HOSTNAME_FQDN="${SUBDOMAIN}.${DOMAIN}"
@@ -154,7 +154,7 @@ echo "[install] using PORT=$PORT"
 # ─── install / refresh systemd unit ──────────────────────────────────────────
 
 echo "[install] installing systemd unit ..."
-cp "$APP_DIR/deploy/cleaners-hub.service" "$UNIT_PATH"
+cp "$APP_DIR/deploy/full-name-splitter.service" "$UNIT_PATH"
 sed -i "s|^Environment=PORT=.*|Environment=PORT=${PORT}|" "$UNIT_PATH"
 chmod 644 "$UNIT_PATH"
 
@@ -251,7 +251,7 @@ fi
 
 echo
 echo "── verification ──"
-echo "cleaners-hub:  $(systemctl is-active "${APP_NAME}.service")"
+echo "full-name-splitter:  $(systemctl is-active "${APP_NAME}.service")"
 echo "cloudflared:   $(systemctl is-active cloudflared.service)"
 echo "/api/health:   $(curl -s -m 5 "http://127.0.0.1:${PORT}/api/health" || echo '(no response)')"
 echo

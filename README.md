@@ -1,9 +1,9 @@
-# cleaners-hub
+# full-name-splitter
 
 > FastAPI + React app. AI-cleans company names and first names via the Grok (xAI) API. Two tabs (Companies / First Names) plus a third tab for Address enrichment (Gemini via OpenRouter, currently paused on cost grounds).
 
-**Live:** https://cleaners.maxcommandcenter.com
-**Repo:** github.com/maxthebot99-bit/cleaners-hub
+**Live:** https://full-name-splitter.maxcommandcenter.com
+**Repo:** github.com/maxthebot99-bit/full-name-splitter
 **Owner:** Jason Azif
 **Status:** active
 **SOP (for end users):** [SOP.md](./SOP.md)
@@ -14,12 +14,12 @@ Web app behind Cloudflare Access that consumes a CSV/XLSX upload, sends rows to 
 
 The Address tab uses Gemini (via OpenRouter) instead of Grok. It works but Address enrichment is currently paused, since Clay is cheaper for that use case.
 
-Sibling apps: [pipeline-hub] calls cleaners-hub as a service during stages 7-8 of the integrated campaign pipeline.
+Sibling apps: [pipeline-hub] calls full-name-splitter as a service during stages 7-8 of the integrated campaign pipeline.
 
 ## Stack
 
 - Python 3.11, FastAPI + Uvicorn
-- React + TypeScript + Vite (UI). `ui/` source builds to `src/cleaners_hub/ui_dist/`, which the FastAPI app serves via StaticFiles
+- React + TypeScript + Vite (UI). `ui/` source builds to `src/full_name_splitter/ui_dist/`, which the FastAPI app serves via StaticFiles
 - httpx for Grok/OpenRouter HTTP calls
 - tiktoken for token accounting + cost tracking
 - pandas + pyarrow + openpyxl for CSV/Excel I/O
@@ -33,22 +33,22 @@ Sibling apps: [pipeline-hub] calls cleaners-hub as a service during stages 7-8 o
 # Backend
 python -m venv .venv
 .venv/Scripts/python.exe -m pip install -e .
-.venv/Scripts/python.exe -m cleaners_hub.main   # serves on :8193
+.venv/Scripts/python.exe -m full_name_splitter.main   # serves on :8194
 
 # Frontend (development)
 cd ui
 npm install
-npm run dev    # serves on :5173, proxies /api -> :8193
+npm run dev    # serves on :5173, proxies /api -> :8194
 ```
 
 For a production-shape local run, build the UI first (`npm run build`) so `ui_dist/` is populated.
 
 ## How it's deployed
 
-- VPS path: `/var/www/dashboard/apps/cleaners-hub/`
-- Port: 8193 (bound to 127.0.0.1, fronted by cloudflared)
-- Service: `cleaners-hub.service`, `User=www-data`
-- Auto-deploy: `cleaners-hub-autodeploy.timer` polls `origin/main` every minute and invokes `deploy/install-vps.sh` when a new commit lands. Manual deploy: `ssh vps "sudo /var/www/dashboard/apps/cleaners-hub/deploy/install-vps.sh"`.
+- VPS path: `/var/www/dashboard/apps/full-name-splitter/`
+- Port: 8194 (bound to 127.0.0.1, fronted by cloudflared)
+- Service: `full-name-splitter.service`, `User=www-data`
+- Auto-deploy: `full-name-splitter-autodeploy.timer` polls `origin/main` every minute and invokes `deploy/install-vps.sh` when a new commit lands. Manual deploy: `ssh vps "sudo /var/www/dashboard/apps/full-name-splitter/deploy/install-vps.sh"`.
 - Cloudflare Access: gated by the standard maxcommandcenter Access policy.
 
 **Important:** `install-vps.sh` does NOT run `npm run build`. UI changes require either pushing the rebuilt `ui_dist/` artifacts or running the build locally before committing. The auto-deploy will deploy whatever `ui_dist/` is in the repo as-is.
@@ -59,7 +59,7 @@ Loaded by systemd at service start.
 
 | Var | Required | Notes |
 |-----|----------|-------|
-| `PORT` | yes | 8193 in prod |
+| `PORT` | yes | 8194 in prod |
 | `GROK_API_KEY_FILE` | yes | systemd credential, path to the encrypted Grok PAT |
 | `OPENROUTER_API_KEY_FILE` | for Address tab | systemd credential, Gemini-via-OpenRouter key |
 | `RESEND_API_KEY_FILE` | optional | email-completion notifications |
@@ -79,8 +79,8 @@ Per-job dirs are owned by `Cf-Access-Authenticated-User-Email`; users can only s
 ## File layout
 
 ```
-cleaners-hub/
-├── src/cleaners_hub/
+full-name-splitter/
+├── src/full_name_splitter/
 │   ├── main.py             # FastAPI app, routes, lifespan
 │   ├── ui_dist/            # built React bundle (Vite output)
 │   └── ...
@@ -93,9 +93,9 @@ cleaners-hub/
 ├── deploy/
 │   ├── install-vps.sh
 │   ├── auto-deploy.sh
-│   ├── cleaners-hub-autodeploy.timer
-│   ├── cleaners-hub-autodeploy.service
-│   ├── cleaners-hub.service
+│   ├── full-name-splitter-autodeploy.timer
+│   ├── full-name-splitter-autodeploy.service
+│   ├── full-name-splitter.service
 │   └── start.sh
 ├── pyproject.toml
 ├── SOP.md
@@ -107,8 +107,8 @@ cleaners-hub/
 No formal test suite at present. Smoke test:
 
 ```bash
-curl -sI http://127.0.0.1:8193/SOP.md | head -3   # Expect 200 + text/markdown
-curl http://127.0.0.1:8193/api/health             # Expect {"status":"ok",...}
+curl -sI http://127.0.0.1:8194/SOP.md | head -3   # Expect 200 + text/markdown
+curl http://127.0.0.1:8194/api/health             # Expect {"status":"ok",...}
 ```
 
 ## Known gotchas
@@ -125,6 +125,6 @@ curl http://127.0.0.1:8193/api/health             # Expect {"status":"ok",...}
 
 ## Related apps
 
-- [pipeline-hub] calls cleaners-hub as a service during stages 7-8 (company name normalization on contact lists).
-- [data-suppressor] / [deduplicator] should run after cleaners-hub for the cleanest dedupe (clean names dedupe better).
+- [pipeline-hub] calls full-name-splitter as a service during stages 7-8 (company name normalization on contact lists).
+- [data-suppressor] / [deduplicator] should run after full-name-splitter for the cleanest dedupe (clean names dedupe better).
 - The legacy desktop apps (`company-name-cleaner`, `first-name-cleaner`) this replaces still exist in archived repos.

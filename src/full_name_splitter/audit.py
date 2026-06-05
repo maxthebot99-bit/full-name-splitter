@@ -139,9 +139,9 @@ def audit(
 ) -> None:
     """Emit one structured audit line.
 
-    Always uses the ``cleaners_hub.audit`` logger so it's easy to grep.
+    Always uses the ``full_name_splitter.audit`` logger so it's easy to grep.
     """
-    logger = logging.getLogger("cleaners_hub.audit")
+    logger = logging.getLogger("full_name_splitter.audit")
     payload = _safe_extras(
         {
             "action": action,

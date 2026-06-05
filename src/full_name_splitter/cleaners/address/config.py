@@ -16,7 +16,7 @@ def _compute_prompt_version() -> str:
         h.update(b"prompt.txt:")
         h.update((RESOURCES_DIR / "prompt.txt").read_bytes())
     except OSError:
-        logging.getLogger("cleaners_hub.cleaners.address").warning(
+        logging.getLogger("full_name_splitter.cleaners.address").warning(
             "prompt.txt missing at import time; PROMPT_VERSION hash incomplete"
         )
     return "address-llama-v1-" + h.hexdigest()[:12]
@@ -57,7 +57,7 @@ def resource_path(name: str) -> Path:
     return RESOURCES_DIR / name
 
 
-_pipeline_logger = logging.getLogger("cleaners_hub.cleaners.address")
+_pipeline_logger = logging.getLogger("full_name_splitter.cleaners.address")
 
 
 def log(msg: str) -> None:

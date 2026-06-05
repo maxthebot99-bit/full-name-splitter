@@ -19,7 +19,7 @@ from pathlib import Path
 import httpx
 from tenacity import retry, retry_if_exception_type, wait_exponential_jitter
 
-from cleaners_hub.secrets import get_key
+from full_name_splitter.secrets import get_key
 
 from ..config import Settings, log
 from ..errors import (
@@ -156,7 +156,7 @@ class OpenRouterLlamaProvider:
         # Session-level usage accumulators. Mirror the fields in reset_usage().
         # OpenRouter's authoritative billing — sum of usage.cost across calls
         # — is used preferentially over the locally-computed token×rate cost
-        # when available so the cleaners-hub sidebar matches the OpenRouter
+        # when available so the full-name-splitter sidebar matches the OpenRouter
         # dashboard exactly (no drift from upstream pricing tweaks or
         # cached-token discounts).
         self.prompt_tokens_total = 0
@@ -175,7 +175,7 @@ class OpenRouterLlamaProvider:
         self.has_actual_cost = False
         # OpenRouter's authoritative billing — sum of usage.cost across calls.
         # Used preferentially over the locally-computed token×rate cost when
-        # available so the cleaners-hub sidebar matches the OpenRouter dashboard
+        # available so the full-name-splitter sidebar matches the OpenRouter dashboard
         # exactly (no drift from upstream pricing tweaks or cached-token discounts).
         self.actual_cost_total = 0.0
         self.has_actual_cost = False
@@ -274,8 +274,8 @@ class OpenRouterLlamaProvider:
         }
         headers = {
             "Authorization": f"Bearer {self._api_key}",
-            "HTTP-Referer": "https://cleaners.maxcommandcenter.com",
-            "X-Title": "cleaners-hub address tab",
+            "HTTP-Referer": "https://full-name-splitter.maxcommandcenter.com",
+            "X-Title": "full-name-splitter address tab",
             "Content-Type": "application/json",
         }
         try:

@@ -8,7 +8,7 @@ They live in files on disk that are pointed to by env vars:
                           unset, email alerts are disabled)
 
 In production, these env vars are set by systemd via LoadCredentialEncrypted=,
-and the files live in /run/credentials/cleaners-hub.service/, readable only by
+and the files live in /run/credentials/full-name-splitter.service/, readable only by
 the unit's User=www-data while the service is running.
 
 In local dev, point the env vars at plaintext files in the repo root (gitignored).

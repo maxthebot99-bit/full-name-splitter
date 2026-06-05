@@ -3,7 +3,7 @@
 One ``Session`` per upload. Holds the uploaded file, parsed columns, run
 state, cancel flag, and an asyncio event queue for streaming progress to
 the UI. Sessions live under ``$DATA_DIR/sessions/<sid>/`` (or
-``/var/tmp/cleaners-hub/sessions/<sid>/`` if no env override) and are swept
+``/var/tmp/full-name-splitter/sessions/<sid>/`` if no env override) and are swept
 after ``IDLE_TTL_S`` of inactivity.
 
 All endpoints validate ``session_id`` strictly as a UUID4 before doing any
@@ -33,14 +33,14 @@ SWEEP_INTERVAL_S: int = 5 * 60  # check every 5 minutes
 # similar app). Files older than this are reaped by the sweeper.
 OUTPUT_RETENTION_S: int = 30 * 24 * 60 * 60  # 30 days
 
-_log = logging.getLogger("cleaners_hub.sessions")
+_log = logging.getLogger("full_name_splitter.sessions")
 
 
 def _sessions_root() -> Path:
     p = os.environ.get("CLEANERS_HUB_SESSIONS_DIR")
     if p:
         return Path(p)
-    return Path("/var/tmp/cleaners-hub/sessions")
+    return Path("/var/tmp/full-name-splitter/sessions")
 
 
 def _outputs_root() -> Path:
@@ -48,13 +48,13 @@ def _outputs_root() -> Path:
 
     Lives under /var/lib (not PrivateTmp) so a service restart doesn't wipe
     completed run outputs. The systemd unit's ReadWritePaths covers
-    /var/lib/cleaners-hub which contains this dir + spend.sqlite3 +
+    /var/lib/full-name-splitter which contains this dir + spend.sqlite3 +
     history.sqlite3.
     """
     p = os.environ.get("CLEANERS_HUB_OUTPUTS_DIR")
     if p:
         return Path(p)
-    return Path("/var/lib/cleaners-hub/outputs")
+    return Path("/var/lib/full-name-splitter/outputs")
 
 
 def is_valid_sid(sid: str) -> bool:

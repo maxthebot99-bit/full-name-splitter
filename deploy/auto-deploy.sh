@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Polls origin/main; if there's a new commit, runs install-vps.sh.
-# Invoked by cleaners-hub-autodeploy.timer every minute. Designed to be
+# Invoked by full-name-splitter-autodeploy.timer every minute. Designed to be
 # a no-op when there's nothing new — git fetch is the only network call
 # in the steady state.
 
 set -euo pipefail
 
-SOURCE_DIR="/home/kianna/github-repos/cleaners-hub"
+SOURCE_DIR="/home/kianna/github-repos/full-name-splitter"
 INSTALL_SCRIPT="$SOURCE_DIR/deploy/install-vps.sh"
 ASKPASS="/usr/local/bin/github-pat-askpass"
 

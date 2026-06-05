@@ -1,5 +1,5 @@
 [Unit]
-Description=Poll for cleaners-hub deploys every minute
+Description=Poll for full-name-splitter deploys every minute
 
 [Timer]
 # Fire 30s after the timer is enabled (whether at boot or via install-vps.sh
@@ -14,7 +14,7 @@ OnBootSec=2min
 OnUnitActiveSec=1min
 Persistent=true
 AccuracySec=15s
-Unit=cleaners-hub-autodeploy.service
+Unit=full-name-splitter-autodeploy.service
 
 [Install]
 WantedBy=timers.target

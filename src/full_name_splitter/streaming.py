@@ -25,7 +25,7 @@ from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any, AsyncIterator
 
-_log = logging.getLogger("cleaners_hub.streaming")
+_log = logging.getLogger("full_name_splitter.streaming")
 
 
 def _json_default(o: Any) -> Any:
@@ -46,7 +46,7 @@ class Pusher:
     loop. The SSE handler drains the queue.
     """
 
-    def __init__(self, session) -> None:  # cleaners_hub.sessions.Session
+    def __init__(self, session) -> None:  # full_name_splitter.sessions.Session
         self._session = session
 
     def push(self, kind: str, payload: Any = None) -> None:
