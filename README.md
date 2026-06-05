@@ -33,12 +33,12 @@ Sibling apps: [pipeline-hub] calls full-name-splitter as a service during stages
 # Backend
 python -m venv .venv
 .venv/Scripts/python.exe -m pip install -e .
-.venv/Scripts/python.exe -m full_name_splitter.main   # serves on :8194
+.venv/Scripts/python.exe -m full_name_splitter.main   # serves on :8201
 
 # Frontend (development)
 cd ui
 npm install
-npm run dev    # serves on :5173, proxies /api -> :8194
+npm run dev    # serves on :5173, proxies /api -> :8201
 ```
 
 For a production-shape local run, build the UI first (`npm run build`) so `ui_dist/` is populated.
@@ -46,7 +46,7 @@ For a production-shape local run, build the UI first (`npm run build`) so `ui_di
 ## How it's deployed
 
 - VPS path: `/var/www/dashboard/apps/full-name-splitter/`
-- Port: 8194 (bound to 127.0.0.1, fronted by cloudflared)
+- Port: 8201 (bound to 127.0.0.1, fronted by cloudflared)
 - Service: `full-name-splitter.service`, `User=www-data`
 - Auto-deploy: `full-name-splitter-autodeploy.timer` polls `origin/main` every minute and invokes `deploy/install-vps.sh` when a new commit lands. Manual deploy: `ssh vps "sudo /var/www/dashboard/apps/full-name-splitter/deploy/install-vps.sh"`.
 - Cloudflare Access: gated by the standard maxcommandcenter Access policy.
@@ -59,7 +59,7 @@ Loaded by systemd at service start.
 
 | Var | Required | Notes |
 |-----|----------|-------|
-| `PORT` | yes | 8194 in prod |
+| `PORT` | yes | 8201 in prod |
 | `GROK_API_KEY_FILE` | yes | systemd credential, path to the encrypted Grok PAT |
 | `OPENROUTER_API_KEY_FILE` | for Address tab | systemd credential, Gemini-via-OpenRouter key |
 | `RESEND_API_KEY_FILE` | optional | email-completion notifications |
@@ -107,8 +107,8 @@ full-name-splitter/
 No formal test suite at present. Smoke test:
 
 ```bash
-curl -sI http://127.0.0.1:8194/SOP.md | head -3   # Expect 200 + text/markdown
-curl http://127.0.0.1:8194/api/health             # Expect {"status":"ok",...}
+curl -sI http://127.0.0.1:8201/SOP.md | head -3   # Expect 200 + text/markdown
+curl http://127.0.0.1:8201/api/health             # Expect {"status":"ok",...}
 ```
 
 ## Known gotchas
