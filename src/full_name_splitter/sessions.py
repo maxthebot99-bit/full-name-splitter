@@ -96,9 +96,11 @@ class Session:
     result_prompt_tokens: int = 0
     result_completion_tokens: int = 0
 
-    # Manual cell overrides: row index (1-based, matching the n field on Row) →
-    # user-edited cleaned value. Wins over the Grok output at download time.
-    overrides: dict[int, str] = field(default_factory=dict)
+    # Manual cell overrides: row index (0-based, matching the export DF index) →
+    # (first, last) tuple. Either part can be None (cleared). Wins over the
+    # Grok output at download time. Splitter-only: company/name kinds used a
+    # single string here, but the splitter splits the row into two cells.
+    overrides: dict[int, tuple[str | None, str | None]] = field(default_factory=dict)
     # In-memory copy of the source DataFrame, kept for cheap rebuilds when
     # the user toggles overrides or reruns a row.
     source_df: object | None = None  # pandas.DataFrame; typed loose to avoid import at session-creation time

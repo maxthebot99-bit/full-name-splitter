@@ -1,8 +1,6 @@
 // High-level actions — what UI components call. Wraps the HTTP api.ts and
-// keeps the store consistent. Mirrors the shape of the desktop Nocturne
-// api.ts (pickFile / listColumnsWithSamples / confirmColumn / startRun /
-// dryRun / cancelRun / rerunRow / closeDryRun / getBackAction / etc.) but
-// every backend hop is HTTP + SSE.
+// keeps the store consistent. Splitter shape: one kind, one slice, no kind
+// parameter threaded through.
 
 import {
   cancelRun as httpCancelRun,
@@ -26,17 +24,11 @@ import {
 import { handleSseEvent, useStore, viewState } from '../store';
 import { mapDryRunSample } from './mapping';
 import type {
-  AddressRow,
   AppSettings,
   AppSettingsPatch,
-  Kind,
   MapperColumn,
   Row,
 } from '../types';
-
-function active(): Kind {
-  return useStore.getState().active;
-}
 
 // ─── whoami / settings / history ────────────────────────────────────────
 
@@ -86,28 +78,24 @@ export function pastRunDownloadUrl(runId: string): string {
 
 // Browse-via-OS-dialog. Spawns a hidden <input type="file"> so we don't
 // have to wire one into every empty-state surface.
-export function pickFile(kind?: Kind): void {
-  const target = kind ?? active();
+export function pickFile(): void {
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = '.csv,.xlsx';
   input.onchange = () => {
     const f = input.files?.[0];
-    if (f) void handleFileSelected(target, f);
+    if (f) void handleFileSelected(f);
   };
   input.click();
 }
 
 // Drop-target onDrop also routes through here.
-export async function handleFileSelected(kind: Kind, file: File): Promise<void> {
+export async function handleFileSelected(file: File): Promise<void> {
   const s = useStore.getState();
-  s.resetSlice(kind);
+  s.resetSlice();
   try {
-    const up = await uploadFile(kind, file);
-    // Stash sid + provisional file meta so the empty/awaiting_column view
-    // shows the filename right away. Columns + row count come from
-    // /api/columns next.
-    s.patchSlice(kind, {
+    const up = await uploadFile(file);
+    s.patchSlice({
       sid: up.sid,
       runState: 'uploaded',
       file: {
@@ -119,7 +107,7 @@ export async function handleFileSelected(kind: Kind, file: File): Promise<void> 
     });
     const cols = await getColumns(up.sid);
     const colNames = cols.columns.map((c) => c.name);
-    s.patchSlice(kind, {
+    s.patchSlice({
       file: {
         name: up.filename,
         rows: cols.row_count_estimate,
@@ -127,29 +115,20 @@ export async function handleFileSelected(kind: Kind, file: File): Promise<void> 
         column: '', // user picks via the mapper
         columns: colNames,
       },
-      mapperSelectedColumn:
-        kind === 'address'
-          ? cols.suggested_pair?.website ?? undefined
-          : cols.suggested ?? undefined,
-      // Address kind: also pre-pick the business-name column.
-      mapperSelectedSecondary:
-        kind === 'address'
-          ? cols.suggested_pair?.name ?? undefined
-          : undefined,
+      mapperSelectedColumn: cols.suggested ?? undefined,
     });
   } catch (err) {
     console.error('[upload] failed:', err);
     const msg = err instanceof Error ? err.message : 'upload failed';
-    s.setUiError(kind, { code: 0, message: msg, retryAfter: 0, lastRow: 0 });
-    s.setRunState(kind, 'error');
+    s.setUiError({ code: 0, message: msg, retryAfter: 0, lastRow: 0 });
+    s.setRunState('error');
   }
 }
 
 // Mapper data — fetch /api/columns again (cheap; cached server-side via
 // the session's _file_meta_obj) and compute display meta.
-export async function listColumnsWithSamples(kind?: Kind): Promise<MapperColumn[]> {
-  const target = kind ?? active();
-  const slice = useStore.getState()[target];
+export async function listColumnsWithSamples(): Promise<MapperColumn[]> {
+  const slice = useStore.getState().fullname;
   if (!slice.sid) return [];
   try {
     const cols = await getColumns(slice.sid);
@@ -175,132 +154,85 @@ export async function listColumnsWithSamples(kind?: Kind): Promise<MapperColumn[
   }
 }
 
-export async function confirmColumn(column: string, kind?: Kind): Promise<void> {
-  const target = kind ?? active();
+export async function confirmColumn(column: string): Promise<void> {
   const s = useStore.getState();
-  s.setColumn(target, column);
-  s.setMapperSelectedColumn(target, undefined);
-  s.setRunState(target, 'columns_loaded');
+  s.setColumn(column);
+  s.setMapperSelectedColumn(undefined);
+  s.setRunState('columns_loaded');
   // Fetch the first ~200 raw values for that column and seed them as
   // `pending` rows. The user sees actual data top-down before paying for
   // Grok; real cleaned values replace these in-place once the run starts.
-  const slice = s[target];
+  const slice = s.fullname;
   if (!slice.sid) return;
   const total = slice.file?.rows ?? 0;
   const n = Math.min(total > 0 ? total : 200, 200);
   try {
     const res = await httpPreview(slice.sid, column, n);
-    s.replaceRows(target, res.rows);
+    s.replaceRows(res.rows);
   } catch (err) {
     console.warn('[preview] failed, falling back to empty placeholders:', err);
     const placeholders: Row[] = Array.from({ length: n }, (_, i) => ({
       n: i + 1,
       orig: '',
+      first: null,
+      last: null,
       clean: null,
       status: 'pending',
       reason: '',
     }));
-    s.replaceRows(target, placeholders);
-  }
-}
-
-
-// Address kind: confirm TWO columns (business name + website URL), then
-// fetch a preview of the input rows so the user sees their data in the
-// table before the run starts. /api/preview returns AddressRow-shaped
-// pending rows when secondary_column is set.
-export async function confirmAddressColumns(
-  websiteColumn: string,
-  nameColumn: string,
-  kind?: Kind,
-): Promise<void> {
-  const target = kind ?? active();
-  const s = useStore.getState();
-  s.setColumn(target, websiteColumn);
-  s.setSecondaryColumn(target, nameColumn);
-  s.setMapperSelectedColumn(target, undefined);
-  s.setMapperSelectedSecondary(target, undefined);
-  s.setRunState(target, 'columns_loaded');
-  const slice = s[target];
-  if (!slice.sid) return;
-  const total = slice.file?.rows ?? 0;
-  const n = Math.min(total > 0 ? total : 200, 200);
-  try {
-    const res = await httpPreview(slice.sid, websiteColumn, n, nameColumn);
-    // The backend returns AddressRow-shaped rows for kind=address.
-    s.replaceAddressRows(target, res.rows as unknown as AddressRow[]);
-  } catch (err) {
-    console.warn('[address preview] failed, table will fill during run:', err);
+    s.replaceRows(placeholders);
   }
 }
 
 // ─── run start (with $5 cost-ceiling modal) ─────────────────────────────
 
-export function beginCleaningWithCostCheck(
-  column: string,
-  rowLimit?: number,
-  kind?: Kind,
-): void {
-  const target = kind ?? active();
+export function beginCleaningWithCostCheck(column: string, rowLimit?: number): void {
   const s = useStore.getState();
-  const slice = s[target];
+  const slice = s.fullname;
   const total = slice.file?.rows ?? 0;
   const effective = rowLimit && rowLimit > 0 ? Math.min(rowLimit, total) : total;
   const costUsd = estimateRunCost(effective);
   const elapsedSeconds = estimateRunSeconds(effective);
   if (costUsd > costCeiling()) {
-    s.setCostModal(target, { rows: effective, costUsd, elapsedSeconds, column, rowLimit });
+    s.setCostModal({ rows: effective, costUsd, elapsedSeconds, column, rowLimit });
     return;
   }
-  void startRun(column, rowLimit, target);
+  void startRun(column, rowLimit);
 }
 
-export function confirmCostModal(kind?: Kind): void {
-  const target = kind ?? active();
+export function confirmCostModal(): void {
   const s = useStore.getState();
-  const m = s[target].costModal;
-  s.setCostModal(target, undefined);
+  const m = s.fullname.costModal;
+  s.setCostModal(undefined);
   if (!m) return;
-  void startRun(m.column, m.rowLimit, target);
+  void startRun(m.column, m.rowLimit);
 }
-export function cancelCostModal(kind?: Kind): void {
-  useStore.getState().setCostModal(kind ?? active(), undefined);
+export function cancelCostModal(): void {
+  useStore.getState().setCostModal(undefined);
 }
 
-export async function startRun(
-  column: string,
-  rowLimit?: number,
-  kind?: Kind,
-): Promise<void> {
-  const target = kind ?? active();
+export async function startRun(column: string, rowLimit?: number): Promise<void> {
   const s = useStore.getState();
-  const slice = s[target];
+  const slice = s.fullname;
   if (!slice.sid) return;
-  // Clear any prior dry-run / error state, but keep `pending` placeholders
-  // so the table doesn't empty out at the start of every run.
-  s.setDryRun(target, undefined);
-  s.setUiError(target, undefined);
-  s.setSpendBlocked(target, undefined);
-  s.setRunState(target, 'running');
-  // Open SSE before sending the start so we don't miss the first batch.
-  openSseFor(target);
+  s.setDryRun(undefined);
+  s.setUiError(undefined);
+  s.setSpendBlocked(undefined);
+  s.setRunState('running');
+  openSse();
   try {
-    // Address kind needs the secondary (business-name) column too.
-    const secondary =
-      target === 'address' ? slice.file?.secondary_column : undefined;
-    await httpStartRun(slice.sid, column, rowLimit, secondary);
+    await httpStartRun(slice.sid, column, rowLimit);
   } catch (err) {
     console.error('[run] start failed:', err);
     const msg = err instanceof Error ? err.message : 'run failed';
-    s.setUiError(target, { code: 0, message: msg, retryAfter: 0, lastRow: 0 });
-    s.setRunState(target, 'error');
+    s.setUiError({ code: 0, message: msg, retryAfter: 0, lastRow: 0 });
+    s.setRunState('error');
   }
 }
 
-export async function cancelRun(kind?: Kind): Promise<void> {
-  const target = kind ?? active();
+export async function cancelRun(): Promise<void> {
   const s = useStore.getState();
-  const slice = s[target];
+  const slice = s.fullname;
   if (!slice.sid) return;
   try {
     await httpCancelRun(slice.sid);
@@ -311,88 +243,80 @@ export async function cancelRun(kind?: Kind): Promise<void> {
 
 // ─── dry-run sample ─────────────────────────────────────────────────────
 
-export async function runDryRun(
-  column: string,
-  count = 25,
-  kind?: Kind,
-): Promise<void> {
-  const target = kind ?? active();
+export async function runDryRun(column: string, count = 25): Promise<void> {
   const s = useStore.getState();
-  const slice = s[target];
+  const slice = s.fullname;
   if (!slice.sid) return;
-  s.setDryRunLoading(target, true);
-  s.setDryRunFilter(target, 'all');
+  s.setDryRunLoading(true);
+  s.setDryRunFilter('all');
   try {
     const resp = await httpDryRunSample(slice.sid, column, count);
-    s.setDryRun(target, mapDryRunSample(resp));
+    s.setDryRun(mapDryRunSample(resp));
   } catch (err) {
     console.error('[dry-run-sample] failed:', err);
     const msg = err instanceof Error ? err.message : 'dry run failed';
-    s.setUiError(target, { code: 0, message: msg, retryAfter: 0, lastRow: 0 });
+    s.setUiError({ code: 0, message: msg, retryAfter: 0, lastRow: 0 });
   } finally {
-    s.setDryRunLoading(target, false);
+    s.setDryRunLoading(false);
   }
 }
 
-export function closeDryRun(kind?: Kind): void {
-  const target = kind ?? active();
+export function closeDryRun(): void {
   const s = useStore.getState();
-  s.setDryRun(target, undefined);
-  s.setDryRunFilter(target, 'all');
-  s.setDryRunLoading(target, false);
+  s.setDryRun(undefined);
+  s.setDryRunFilter('all');
+  s.setDryRunLoading(false);
 }
 
 // ─── per-row actions ────────────────────────────────────────────────────
 
-export async function rerunRow(n: number, kind?: Kind): Promise<void> {
-  const target = kind ?? active();
+export async function rerunRow(n: number): Promise<void> {
   const s = useStore.getState();
-  const slice = s[target];
+  const slice = s.fullname;
   if (!slice.sid) return;
-  // Mark in-flight so the sidebar shows the clay-style "thinking" strip.
-  s.markRowInFlight(target, n);
-  // Optimistically flip the row to pending so the table reads correctly.
+  s.markRowInFlight(n);
   const existing = slice.rows.find((r) => r.n === n);
   if (existing) {
-    s.upsertRow(target, { ...existing, status: 'pending', reason: '' });
+    s.upsertRow({ ...existing, status: 'pending', reason: '' });
   }
   try {
     const updated = await httpRerunRow(slice.sid, n);
-    s.upsertRow(target, updated);
+    s.upsertRow(updated);
   } catch (err) {
     console.error('[rerun-row] failed:', err);
-    if (existing) s.upsertRow(target, existing);
+    if (existing) s.upsertRow(existing);
   } finally {
-    s.unmarkRowInFlight(target, n);
+    s.unmarkRowInFlight(n);
   }
 }
 
 export async function overrideRow(
   n: number,
-  cleaned: string | null,
-  kind?: Kind,
+  first: string | null,
+  last: string | null,
 ): Promise<void> {
-  const target = kind ?? active();
   const s = useStore.getState();
-  const slice = s[target];
+  const slice = s.fullname;
   if (!slice.sid) return;
-  s.markRowInFlight(target, n);
+  s.markRowInFlight(n);
   try {
-    const updated = await httpOverrideRow(slice.sid, n, cleaned);
-    s.upsertRow(target, updated);
+    const updated = await httpOverrideRow(slice.sid, n, first, last);
+    s.upsertRow(updated);
   } catch (err) {
     console.error('[override] failed:', err);
   } finally {
-    s.unmarkRowInFlight(target, n);
+    s.unmarkRowInFlight(n);
   }
 }
 
 // ─── reset / soft reset ─────────────────────────────────────────────────
 
-export function resetActive(): void {
-  const s = useStore.getState();
-  s.resetSlice(s.active);
+export function resetSlice(): void {
+  useStore.getState().resetSlice();
 }
+
+// Back-compat alias for components that still import `resetActive`.
+export const resetActive = resetSlice;
 
 // ─── back-button policy ─────────────────────────────────────────────────
 
@@ -402,7 +326,7 @@ export interface BackAction {
 }
 export function getBackAction(): BackAction | null {
   const s = useStore.getState();
-  const slice = s[s.active];
+  const slice = s.fullname;
   if (slice.dryRun != null || slice.dryRunLoading) {
     return { label: 'Back to table', onClick: () => closeDryRun() };
   }
@@ -411,24 +335,24 @@ export function getBackAction(): BackAction | null {
     case 'awaiting_column':
       return {
         label: 'Pick a different file',
-        onClick: () => s.resetSlice(s.active),
+        onClick: () => s.resetSlice(),
       };
     case 'indexed':
       return {
         label: 'Pick a different column',
         onClick: () => {
-          s.replaceRows(s.active, []);
-          s.setColumn(s.active, '');
-          s.setRunState(s.active, 'uploaded');
+          s.replaceRows([]);
+          s.setColumn('');
+          s.setRunState('uploaded');
         },
       };
     case 'error':
       return {
         label: 'Back to table',
         onClick: () => {
-          s.setUiError(s.active, undefined);
-          s.setSpendBlocked(s.active, undefined);
-          s.setRunState(s.active, slice.rows.length ? 'done' : 'uploaded');
+          s.setUiError(undefined);
+          s.setSpendBlocked(undefined);
+          s.setRunState(slice.rows.length ? 'done' : 'uploaded');
         },
       };
     default:
@@ -438,18 +362,14 @@ export function getBackAction(): BackAction | null {
 
 // ─── SSE plumbing ────────────────────────────────────────────────────────
 
-function openSseFor(kind: Kind): void {
+function openSse(): void {
   const s = useStore.getState();
-  const slice = s[kind];
+  const slice = s.fullname;
   if (!slice.sid) return;
-  // Close any existing stream before opening a new one.
   slice.eventStream?.close();
-  // Capture the sid at subscription time and pass it through the
-  // dispatcher. If the slice gets reset and re-uploaded later, leftover
-  // frames from this stream are discarded by handleSseEvent.
   const sid = slice.sid;
-  const es = openEventStream(sid, (ev) => handleSseEvent(kind, ev, sid));
-  s.setEventStream(kind, es);
+  const es = openEventStream(sid, (ev) => handleSseEvent(ev, sid));
+  s.setEventStream(es);
 }
 
 // ─── boot ───────────────────────────────────────────────────────────────

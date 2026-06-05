@@ -1,7 +1,7 @@
 import { useState, type CSSProperties } from 'react';
 import { N2, fSerif, fMono } from '../../theme';
 import { N2Chip } from '../atoms/N2Chip';
-import type { AppState, Kind, Row } from '../../types';
+import type { AppState, Row } from '../../types';
 import { useStore } from '../../store';
 import { overrideRow, rerunRow } from '../../lib/actions';
 
@@ -11,16 +11,14 @@ const td: CSSProperties = {
   verticalAlign: 'middle',
 };
 
+// Splitter table: each row maps a single input cell to TWO output cells
+// (First Name / Last Name). Double-click either cell to edit it
+// independently of the other.
 export function N2Table({ view }: { view: AppState }) {
-  const slice = useStore((s) => s[s.active]);
+  const slice = useStore((s) => s.fullname);
   const selectRow = useStore((s) => s.selectRow);
   const isStreaming = view === 'running';
-  // The address tab renders via a dedicated multi-field table component.
-  // For now this single-column table is a no-op when active === 'address'.
-  if (slice.kind === 'address') {
-    return null;
-  }
-  const sliceKind = slice.kind as Exclude<Kind, 'address'>;
+
   const filtered = slice.rows.filter(
     (r) => slice.filter === 'all' || r.status === slice.filter,
   );
@@ -44,7 +42,8 @@ export function N2Table({ view }: { view: AppState }) {
           {[
             ['№', 40],
             ['Original', null],
-            ['Cleaned', null],
+            ['First Name', null],
+            ['Last Name', null],
             ['Status', 140],
             ['Grok’s rationale', null],
           ].map(([h, w], i) => (
@@ -80,17 +79,16 @@ export function N2Table({ view }: { view: AppState }) {
             <TableRow
               key={r.n}
               row={r}
-              kind={sliceKind}
               selected={isSel}
               justArrived={justArrived}
               isStreaming={isStreaming}
-              onSelect={() => selectRow(slice.kind, i)}
+              onSelect={() => selectRow(i)}
             />
           );
         })}
         {isStreaming && slice.progress.processed < slice.progress.total && (
           <tr>
-            <td colSpan={5} style={{ padding: '14px 20px', color: N2.text3 }}>
+            <td colSpan={6} style={{ padding: '14px 20px', color: N2.text3 }}>
               <span
                 style={{
                   fontFamily: fMono,
@@ -143,35 +141,38 @@ export function N2Table({ view }: { view: AppState }) {
 
 interface RowProps {
   row: Row;
-  // Address kind has its own table component; this one only handles
-  // single-string-output rows from the company/name pipelines.
-  kind: Exclude<Kind, 'address'>;
   selected: boolean;
   justArrived: boolean;
   isStreaming: boolean;
   onSelect: () => void;
 }
 
-function TableRow({ row, kind, selected, justArrived, isStreaming, onSelect }: RowProps) {
+function TableRow({ row, selected, justArrived, isStreaming, onSelect }: RowProps) {
   const r = row;
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState<string>(r.clean ?? '');
+  // Edit state per output cell, independent of the other.
+  const [editing, setEditing] = useState<null | 'first' | 'last'>(null);
+  const [draftFirst, setDraftFirst] = useState<string>(r.first ?? '');
+  const [draftLast, setDraftLast] = useState<string>(r.last ?? '');
 
-  const startEdit = () => {
+  const startEdit = (which: 'first' | 'last') => {
     if (isStreaming) return;
-    setDraft(r.clean ?? '');
-    setEditing(true);
+    setDraftFirst(r.first ?? '');
+    setDraftLast(r.last ?? '');
+    setEditing(which);
   };
-  const commit = () => {
-    setEditing(false);
-    const next = draft.trim();
-    const cleanedNext = next.length === 0 ? null : next;
-    if (cleanedNext === r.clean) return; // no change
-    void overrideRow(r.n, cleanedNext, kind);
+  const commit = (which: 'first' | 'last') => {
+    setEditing(null);
+    const f = (which === 'first' ? draftFirst : (r.first ?? '')).trim();
+    const l = (which === 'last' ? draftLast : (r.last ?? '')).trim();
+    const nextF = f.length === 0 ? null : f;
+    const nextL = l.length === 0 ? null : l;
+    if (nextF === r.first && nextL === r.last) return; // no change
+    void overrideRow(r.n, nextF, nextL);
   };
-  const cancel = () => {
-    setEditing(false);
-    setDraft(r.clean ?? '');
+  const cancelEdit = () => {
+    setEditing(null);
+    setDraftFirst(r.first ?? '');
+    setDraftLast(r.last ?? '');
   };
 
   return (
@@ -206,77 +207,28 @@ function TableRow({ row, kind, selected, justArrived, isStreaming, onSelect }: R
           {r.orig}
         </span>
       </td>
-      <td
-        style={{
-          ...td,
-          cursor: isStreaming || editing ? 'default' : 'pointer',
-        }}
-        onDoubleClick={startEdit}
-        title={isStreaming ? '' : 'Double-click to edit manually'}
-      >
-        {editing ? (
-          <input
-            autoFocus
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onBlur={commit}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') commit();
-              else if (e.key === 'Escape') cancel();
-            }}
-            style={{
-              fontFamily: fSerif,
-              fontSize: 17,
-              letterSpacing: -0.3,
-              color: N2.text,
-              background: 'rgba(255,253,247,0.05)',
-              border: `1px solid ${N2.accent}`,
-              borderRadius: 2,
-              padding: '4px 8px',
-              width: '100%',
-              outline: 'none',
-            }}
-          />
-        ) : r.status === 'pending' ? (
-          <span
-            style={{
-              fontFamily: fMono,
-              fontSize: 14,
-              color: N2.text4,
-              letterSpacing: 2,
-            }}
-            aria-label="pending"
-          >
-            — — —
-          </span>
-        ) : r.clean == null ? (
-          <span
-            style={{
-              fontFamily: fSerif,
-              fontStyle: 'italic',
-              fontSize: 17,
-              color: N2.rose,
-              letterSpacing: -0.2,
-              fontWeight: 400,
-            }}
-          >
-            null
-          </span>
-        ) : (
-          <span
-            style={{
-              fontFamily: fSerif,
-              fontSize: 17,
-              color: N2.text,
-              letterSpacing: -0.3,
-              fontWeight: 400,
-              fontVariationSettings: '"opsz" 40, "SOFT" 30',
-            }}
-          >
-            {r.clean}
-          </span>
-        )}
-      </td>
+      <SplitCell
+        value={r.first}
+        status={r.status}
+        editing={editing === 'first'}
+        draft={draftFirst}
+        setDraft={setDraftFirst}
+        onStart={() => startEdit('first')}
+        onCommit={() => commit('first')}
+        onCancel={cancelEdit}
+        isStreaming={isStreaming}
+      />
+      <SplitCell
+        value={r.last}
+        status={r.status}
+        editing={editing === 'last'}
+        draft={draftLast}
+        setDraft={setDraftLast}
+        onStart={() => startEdit('last')}
+        onCommit={() => commit('last')}
+        onCancel={cancelEdit}
+        isStreaming={isStreaming}
+      />
       <td style={td}>
         <div
           style={{
@@ -292,11 +244,11 @@ function TableRow({ row, kind, selected, justArrived, isStreaming, onSelect }: R
             disabled={isStreaming}
             onClick={(e) => {
               e.stopPropagation();
-              void rerunRow(r.n, kind);
+              void rerunRow(r.n);
             }}
             title={
               r.status === 'pending'
-                ? 'Clean just this row through Grok'
+                ? 'Split just this row through Grok'
                 : 'Re-run this row through Grok'
             }
             aria-label={`Run row ${r.n}`}
@@ -333,5 +285,107 @@ function TableRow({ row, kind, selected, justArrived, isStreaming, onSelect }: R
         {r.reason}
       </td>
     </tr>
+  );
+}
+
+interface SplitCellProps {
+  value: string | null;
+  status: Row['status'];
+  editing: boolean;
+  draft: string;
+  setDraft: (v: string) => void;
+  onStart: () => void;
+  onCommit: () => void;
+  onCancel: () => void;
+  isStreaming: boolean;
+}
+
+function SplitCell({
+  value,
+  status,
+  editing,
+  draft,
+  setDraft,
+  onStart,
+  onCommit,
+  onCancel,
+  isStreaming,
+}: SplitCellProps) {
+  return (
+    <td
+      style={{
+        ...td,
+        cursor: isStreaming || editing ? 'default' : 'pointer',
+      }}
+      onDoubleClick={onStart}
+      title={isStreaming ? '' : 'Double-click to edit manually'}
+    >
+      {editing ? (
+        <input
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={onCommit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') onCommit();
+            else if (e.key === 'Escape') onCancel();
+          }}
+          style={{
+            fontFamily: fSerif,
+            fontSize: 17,
+            letterSpacing: -0.3,
+            color: N2.text,
+            background: 'rgba(255,253,247,0.05)',
+            border: `1px solid ${N2.accent}`,
+            borderRadius: 2,
+            padding: '4px 8px',
+            width: '100%',
+            outline: 'none',
+          }}
+        />
+      ) : status === 'pending' ? (
+        <span
+          style={{
+            fontFamily: fMono,
+            fontSize: 14,
+            color: N2.text4,
+            letterSpacing: 2,
+          }}
+          aria-label="pending"
+        >
+          — — —
+        </span>
+      ) : value == null || value === '' ? (
+        // Null per-cell: render as italic "null" in rose (same visual as
+        // the legacy single-cell null). A row with both cells empty AND
+        // status=='null' is the only true "no split" state — see the row
+        // status chip for that signal.
+        <span
+          style={{
+            fontFamily: fSerif,
+            fontStyle: 'italic',
+            fontSize: 17,
+            color: N2.rose,
+            letterSpacing: -0.2,
+            fontWeight: 400,
+          }}
+        >
+          null
+        </span>
+      ) : (
+        <span
+          style={{
+            fontFamily: fSerif,
+            fontSize: 17,
+            color: N2.text,
+            letterSpacing: -0.3,
+            fontWeight: 400,
+            fontVariationSettings: '"opsz" 40, "SOFT" 30',
+          }}
+        >
+          {value}
+        </span>
+      )}
+    </td>
   );
 }

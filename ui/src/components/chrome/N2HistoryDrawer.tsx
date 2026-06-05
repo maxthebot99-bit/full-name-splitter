@@ -197,7 +197,7 @@ export function N2HistoryDrawer() {
                           flexWrap: 'wrap',
                         }}
                       >
-                        <span>{r.kind === 'company' ? 'companies' : r.kind === 'address' ? 'addresses' : 'first names'}</span>
+                        <span>full names</span>
                         <span style={{ color: N2.hair3 }}>·</span>
                         <span style={{ color: stateColor }}>{r.state}</span>
                         <span style={{ color: N2.hair3 }}>·</span>

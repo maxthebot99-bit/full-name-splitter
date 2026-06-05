@@ -2,9 +2,8 @@ import { N2, fBody, fMono } from '../../../theme';
 import { useStore, viewState } from '../../../store';
 
 export function N2FileCard() {
-  const slice = useStore((s) => s[s.active]);
+  const slice = useStore((s) => s.fullname);
   const setColumn = useStore((s) => s.setColumn);
-  const setSecondaryColumn = useStore((s) => s.setSecondaryColumn);
   const file = slice.file;
   if (!file) return null;
 
@@ -12,8 +11,6 @@ export function N2FileCard() {
   const options = file.columns && file.columns.length > 0 ? file.columns : [file.column];
   const canEdit = view === 'indexed';
   const displayValue = view === 'awaiting_column' ? '' : file.column;
-  const isAddress = slice.kind === 'address';
-  const secondaryDisplay = view === 'awaiting_column' ? '' : (file.secondary_column ?? '');
 
   return (
     <div style={{ paddingTop: 12, borderTop: `1px solid ${N2.hair}` }}>
@@ -60,23 +57,13 @@ export function N2FileCard() {
       </div>
 
       <ColumnRow
-        label={isAddress ? 'Name' : 'Column'}
-        value={isAddress ? secondaryDisplay : displayValue}
+        label="Column"
+        value={displayValue}
         options={options}
         view={view}
         canEdit={canEdit}
-        onChange={(v) => (isAddress ? setSecondaryColumn(slice.kind, v) : setColumn(slice.kind, v))}
+        onChange={(v) => setColumn(v)}
       />
-      {isAddress && (
-        <ColumnRow
-          label="Website"
-          value={displayValue}
-          options={options}
-          view={view}
-          canEdit={canEdit}
-          onChange={(v) => setColumn(slice.kind, v)}
-        />
-      )}
     </div>
   );
 }

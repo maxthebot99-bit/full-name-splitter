@@ -8,7 +8,7 @@ interface Props {
 }
 
 export function N2Footer({ view }: Props) {
-  const slice = useStore((s) => s[s.active]);
+  const slice = useStore((s) => s.fullname);
   const t = slice.telemetry;
   const progress = slice.progress;
   const file = slice.file;

@@ -12,7 +12,7 @@ function fmtHms(s: number): string {
 }
 
 export function N2Progress({ view }: { view: AppState }) {
-  const slice = useStore((s) => s[s.active]);
+  const slice = useStore((s) => s.fullname);
   const { etaSeconds, elapsedSeconds } = slice.progress;
   // For full runs, progress.processed comes from telemetry SSE events.
   // For partial states (after ▶ but before/between full runs), telemetry

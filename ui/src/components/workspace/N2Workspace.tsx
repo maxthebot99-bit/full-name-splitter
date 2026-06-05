@@ -4,7 +4,6 @@ import { useStore } from '../../store';
 import { downloadUrl } from '../../api';
 import { resetActive } from '../../lib/actions';
 import { N2Table } from './N2Table';
-import { N2AddressTable } from './N2AddressTable';
 import { N2Detail } from './N2Detail';
 import { N2EmptyHero } from './N2EmptyHero';
 import { N2ErrorView } from './N2ErrorView';
@@ -101,38 +100,14 @@ function StatPill({ kind, count, label, active, disabled, onClick, title }: Pill
 }
 
 function N2WorkspaceHeader({ view }: { view: AppState }) {
-  const slice = useStore((s) => s[s.active]);
+  const slice = useStore((s) => s.fullname);
   const setFilter = useStore((s) => s.setFilter);
   const file = slice.file;
 
   const isEmpty = view === 'empty' || view === 'awaiting_column';
-  const isAddress = slice.kind === 'address';
 
-  // Counts depend on which row shape this slice carries.
   const rows = slice.rows;
-  const addressRows = slice.addressRows;
-  const allCount = isAddress
-    ? Math.max(addressRows.length, file?.rows ?? 0)
-    : Math.max(rows.length, file?.rows ?? 0);
-
-  // Per-error-tag breakdown for the "fetch fail" pill tooltip — lets the user
-  // see at a glance which failure mode dominates without filtering. Backend
-  // also streams this as `telemetry.errorBreakdown` for any future consumer.
-  const fetchFailBreakdown = isAddress
-    ? (() => {
-        const tags = ['CLOUDFLARE', 'EMPTY_RENDER', 'SITE_BROKEN', 'TLS_ERROR', 'DEAD_DOMAIN', 'NO_RESPONSE'] as const;
-        const counts: Record<string, number> = {};
-        for (const r of addressRows) {
-          if (r.error && (tags as readonly string[]).includes(r.error)) {
-            counts[r.error] = (counts[r.error] ?? 0) + 1;
-          }
-        }
-        const parts = tags
-          .filter((t) => counts[t])
-          .map((t) => `${t}: ${counts[t]}`);
-        return parts.length ? parts.join(' · ') : undefined;
-      })()
-    : undefined;
+  const allCount = Math.max(rows.length, file?.rows ?? 0);
 
   return (
     <div
@@ -152,72 +127,32 @@ function N2WorkspaceHeader({ view }: { view: AppState }) {
         label="all"
         active={slice.filter === 'all'}
         disabled={isEmpty}
-        onClick={() => setFilter(slice.kind, 'all')}
+        onClick={() => setFilter('all')}
       />
-      {isAddress ? (
-        <>
-          <StatPill
-            kind="changed"
-            count={isEmpty ? null : addressRows.filter((r) => r.status === 'extracted').length}
-            label="extracted"
-            active={slice.filter === 'extracted'}
-            disabled={isEmpty}
-            onClick={() => setFilter(slice.kind, 'extracted')}
-          />
-          <StatPill
-            kind="unchanged"
-            count={isEmpty ? null : addressRows.filter((r) => r.status === 'blank').length}
-            label="blank"
-            active={slice.filter === 'blank'}
-            disabled={isEmpty}
-            onClick={() => setFilter(slice.kind, 'blank')}
-          />
-          <StatPill
-            kind="null"
-            count={isEmpty ? null : addressRows.filter((r) => r.status === 'foreign').length}
-            label="foreign"
-            active={slice.filter === 'foreign'}
-            disabled={isEmpty}
-            onClick={() => setFilter(slice.kind, 'foreign')}
-          />
-          <StatPill
-            kind="null"
-            count={isEmpty ? null : addressRows.filter((r) => r.status === 'fetch_failed').length}
-            label="fetch fail"
-            active={slice.filter === 'fetch_failed'}
-            disabled={isEmpty}
-            onClick={() => setFilter(slice.kind, 'fetch_failed')}
-            title={fetchFailBreakdown}
-          />
-        </>
-      ) : (
-        <>
-          <StatPill
-            kind="changed"
-            count={isEmpty ? null : rows.filter((r) => r.status === 'changed').length}
-            label="changed"
-            active={slice.filter === 'changed'}
-            disabled={isEmpty}
-            onClick={() => setFilter(slice.kind, 'changed')}
-          />
-          <StatPill
-            kind="unchanged"
-            count={isEmpty ? null : rows.filter((r) => r.status === 'unchanged').length}
-            label="unchanged"
-            active={slice.filter === 'unchanged'}
-            disabled={isEmpty}
-            onClick={() => setFilter(slice.kind, 'unchanged')}
-          />
-          <StatPill
-            kind="null"
-            count={isEmpty ? null : rows.filter((r) => r.status === 'null').length}
-            label="null"
-            active={slice.filter === 'null'}
-            disabled={isEmpty}
-            onClick={() => setFilter(slice.kind, 'null')}
-          />
-        </>
-      )}
+      <StatPill
+        kind="changed"
+        count={isEmpty ? null : rows.filter((r) => r.status === 'changed').length}
+        label="changed"
+        active={slice.filter === 'changed'}
+        disabled={isEmpty}
+        onClick={() => setFilter('changed')}
+      />
+      <StatPill
+        kind="unchanged"
+        count={isEmpty ? null : rows.filter((r) => r.status === 'unchanged').length}
+        label="unchanged"
+        active={slice.filter === 'unchanged'}
+        disabled={isEmpty}
+        onClick={() => setFilter('unchanged')}
+      />
+      <StatPill
+        kind="null"
+        count={isEmpty ? null : rows.filter((r) => r.status === 'null').length}
+        label="null"
+        active={slice.filter === 'null'}
+        disabled={isEmpty}
+        onClick={() => setFilter('null')}
+      />
 
       <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
         <GhostButton
@@ -297,17 +232,113 @@ function GhostButton({ label, title, onClick, disabled = false }: GhostButtonPro
   );
 }
 
+// Per-spec section 6: result panel shown when the run completes. Renders
+// counts + two download buttons (full file vs drop-NULL rows). Sits in the
+// workspace between the table and the row detail so the user sees the
+// total + the two options at a glance.
+function N2ResultPanel() {
+  const slice = useStore((s) => s.fullname);
+  const sid = slice.sid;
+  const rows = slice.rows;
+  // Counts: total processed (every non-pending row) and Y extracted /
+  // Z NULL splits per the spec. "Extracted cleanly" = a row Grok produced
+  // a non-null split for. NULL = Grok returned null for both parts.
+  const processed = rows.filter((r) => r.status !== 'pending').length;
+  const nullCount = rows.filter((r) => r.status === 'null').length;
+  const extracted = processed - nullCount;
+  if (!sid) return null;
+  return (
+    <div
+      style={{
+        borderTop: `1px solid ${N2.hair}`,
+        padding: '14px 24px 16px',
+        background: 'rgba(20,22,33,0.6)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 18,
+        flexWrap: 'wrap',
+      }}
+    >
+      <div
+        style={{
+          fontFamily: fMono,
+          fontSize: 11,
+          color: N2.text2,
+          letterSpacing: 0.6,
+          flex: '1 1 320px',
+        }}
+      >
+        <span style={{ color: N2.text, fontWeight: 600 }}>
+          {processed.toLocaleString('en-US')}
+        </span>{' '}
+        rows processed
+        <span style={{ color: N2.hair3, margin: '0 8px' }}>·</span>
+        <span style={{ color: N2.sage, fontWeight: 600 }}>
+          {extracted.toLocaleString('en-US')}
+        </span>{' '}
+        extracted cleanly
+        <span style={{ color: N2.hair3, margin: '0 8px' }}>·</span>
+        <span style={{ color: N2.rose, fontWeight: 600 }}>
+          {nullCount.toLocaleString('en-US')}
+        </span>{' '}
+        NULL
+      </div>
+      <div style={{ display: 'flex', gap: 10, flex: '0 0 auto' }}>
+        <a
+          href={downloadUrl(sid)}
+          style={{
+            background: `linear-gradient(180deg, ${N2.accent}, ${N2.accentSoft})`,
+            color: '#0a0612',
+            border: 'none',
+            padding: '8px 14px',
+            borderRadius: 2,
+            fontSize: 10.5,
+            fontFamily: fMono,
+            fontWeight: 700,
+            letterSpacing: 1.4,
+            textTransform: 'uppercase',
+            cursor: 'pointer',
+            boxShadow: `0 0 18px ${N2.accentGlow}`,
+            textDecoration: 'none',
+          }}
+        >
+          ↓ Download all
+        </a>
+        <a
+          href={downloadUrl(sid, { dropNull: true })}
+          title="Download CSV with NULL-split rows filtered out"
+          style={{
+            background: 'transparent',
+            color: N2.text2,
+            border: `1px solid ${N2.hair2}`,
+            padding: '8px 14px',
+            borderRadius: 2,
+            fontSize: 10.5,
+            fontFamily: fMono,
+            fontWeight: 700,
+            letterSpacing: 1.4,
+            textTransform: 'uppercase',
+            cursor: 'pointer',
+            textDecoration: 'none',
+          }}
+        >
+          ↓ Download cleaned (drop NULL)
+        </a>
+      </div>
+    </div>
+  );
+}
+
 export function N2Workspace({ view }: { view: AppState }) {
-  const activeKind = useStore((s) => s.active);
-  const dryRun = useStore((s) => s[s.active].dryRun);
-  const dryRunLoading = useStore((s) => s[s.active].dryRunLoading);
+  const dryRun = useStore((s) => s.fullname.dryRun);
+  const dryRunLoading = useStore((s) => s.fullname.dryRunLoading);
   const showDryRun = (dryRun != null || dryRunLoading) && view !== 'empty' && view !== 'error';
 
   return (
     <section
       style={{
         display: 'grid',
-        gridTemplateRows: 'auto 1fr auto',
+        gridTemplateRows: 'auto 1fr auto auto',
         overflow: 'hidden',
         minWidth: 0,
       }}
@@ -324,14 +355,14 @@ export function N2Workspace({ view }: { view: AppState }) {
           <div style={{ height: '100%', overflow: 'auto' }}><N2ErrorView /></div>
         ) : (
           // running / done / cancelled / indexed → table.
-          // 'cancelled' especially: the user pressed Cancel; their cleaned
-          // rows are right there, the sidebar offers Continue cleaning.
-          // Address kind has a multi-field row shape; uses a separate table.
+          // 'cancelled' especially: the user pressed Cancel; their split
+          // rows are right there, the sidebar offers Continue splitting.
           <div style={{ height: '100%', overflow: 'auto' }}>
-            {activeKind === 'address' ? <N2AddressTable view={view} /> : <N2Table view={view} />}
+            <N2Table view={view} />
           </div>
         )}
       </div>
+      {view === 'done' && !showDryRun && <N2ResultPanel />}
       {!showDryRun && view !== 'empty' && view !== 'awaiting_column' && view !== 'error' && (
         <N2Detail />
       )}

@@ -11,7 +11,7 @@ import { N2HistoryDrawer } from './components/chrome/N2HistoryDrawer';
 import { N2SettingsModal } from './components/chrome/N2SettingsModal';
 
 export function App() {
-  const slice = useStore((s) => s[s.active]);
+  const slice = useStore((s) => s.fullname);
   const view = viewState(slice);
 
   useEffect(() => {

@@ -1,109 +1,50 @@
 import { useEffect, useState } from 'react';
 import { N2, fSerif, fBody, fMono } from '../../theme';
 import type { MapperColumn } from '../../types';
-import {
-  listColumnsWithSamples,
-  confirmColumn,
-  confirmAddressColumns,
-} from '../../lib/actions';
+import { listColumnsWithSamples, confirmColumn } from '../../lib/actions';
 import { useStore } from '../../store';
 
 // Column-picker workspace — shown after a file is uploaded and before the
 // run starts. Renders one card per column with a short type hint and 5
 // sample values. The suggested column gets a sage "Grok's guess" badge.
 //
-// For kind="address" the picker is a two-step flow:
-//   step 1 — "Which column holds the business name?"
-//   step 2 — "Which column holds the website URL?"
-// Each step's selection is stored on the slice (mapperSelectedSecondary
-// for the name; mapperSelectedColumn for the website). Confirming step 2
-// runs both through confirmAddressColumns().
+// Splitter is single-column (the full-name column). The original cleaners-
+// hub two-step address flow was stripped here.
 export function N2ColumnMapper() {
-  const kind = useStore((s) => s.active);
-  const primarySelected = useStore((s) => s[s.active].mapperSelectedColumn) ?? null;
-  const secondarySelected = useStore((s) => s[s.active].mapperSelectedSecondary) ?? null;
-  const setPrimary = useStore((s) => s.setMapperSelectedColumn);
-  const setSecondary = useStore((s) => s.setMapperSelectedSecondary);
+  const selected = useStore((s) => s.fullname.mapperSelectedColumn) ?? null;
+  const setSelected = useStore((s) => s.setMapperSelectedColumn);
   const [columns, setColumns] = useState<MapperColumn[] | null>(null);
   const [busy, setBusy] = useState(false);
-  // For address: 'website' = step 1 (the primary input — what the pipeline
-  // actually fetches), 'name' = step 2. The website is recognizable from
-  // sample values (URL-shaped strings) and is the lookup key, so it should
-  // be confirmed first.
-  const [addressStep, setAddressStep] = useState<'website' | 'name'>('website');
 
   useEffect(() => {
     let cancelled = false;
-    setAddressStep('website');
-    void listColumnsWithSamples(kind).then((cols) => {
+    void listColumnsWithSamples().then((cols) => {
       if (cancelled) return;
       setColumns(cols);
-      // Pre-pick suggested if user hasn't manually picked yet.
-      const already = useStore.getState()[kind].mapperSelectedColumn;
+      const already = useStore.getState().fullname.mapperSelectedColumn;
       if (!already) {
         const sug = cols.find((c) => c.suggested);
-        if (sug) setPrimary(kind, sug.id);
+        if (sug) setSelected(sug.id);
       }
     });
     return () => {
       cancelled = true;
     };
-  }, [kind, setPrimary]);
-
-  const isAddress = kind === 'address';
-  // The "active" selection for the current step.
-  const selected = isAddress
-    ? addressStep === 'website'
-      ? primarySelected
-      : secondarySelected
-    : primarySelected;
-  const setSelected = (col: string) => {
-    if (isAddress && addressStep === 'name') {
-      setSecondary(kind, col);
-    } else {
-      setPrimary(kind, col);
-    }
-  };
+  }, [setSelected]);
 
   const onConfirm = async () => {
     if (!selected || busy) return;
-    if (isAddress && addressStep === 'website') {
-      // Advance to step 2 (name pick).
-      setAddressStep('name');
-      return;
-    }
     setBusy(true);
     try {
-      if (isAddress) {
-        if (!primarySelected) {
-          setBusy(false);
-          setAddressStep('website');
-          return;
-        }
-        await confirmAddressColumns(primarySelected, selected, kind);
-      } else {
-        await confirmColumn(selected, kind);
-      }
+      await confirmColumn(selected);
     } finally {
       setBusy(false);
     }
   };
 
   const selectedCol = columns?.find((c) => c.id === selected) ?? null;
-  const titleText = !isAddress
-    ? kind === 'company'
-      ? 'Which column holds the company name?'
-      : 'Which column holds the first name?'
-    : addressStep === 'website'
-      ? 'Which column holds the website URL?'
-      : 'Which column holds the business name?';
-  const confirmLabel = busy
-    ? 'Loading…'
-    : isAddress
-      ? addressStep === 'website'
-        ? 'Continue →'
-        : 'Confirm columns'
-      : 'Confirm column';
+  const titleText = 'Which column holds the full name?';
+  const confirmLabel = busy ? 'Loading…' : 'Confirm column';
 
   return (
     <div
@@ -129,20 +70,6 @@ export function N2ColumnMapper() {
         >
           {titleText}
         </div>
-        {isAddress && (
-          <div
-            style={{
-              fontFamily: fMono,
-              fontSize: 10,
-              letterSpacing: 1.6,
-              textTransform: 'uppercase',
-              color: N2.text3,
-              marginTop: 8,
-            }}
-          >
-            Step {addressStep === 'website' ? 1 : 2} of 2
-          </div>
-        )}
         <div
           style={{
             color: N2.text2,
@@ -228,7 +155,7 @@ export function N2ColumnMapper() {
                 selected
               </span>
               <span style={{ color: N2.text3 }}>
-                Cleaning{' '}
+                Splitting{' '}
                 <b
                   style={{
                     color: N2.text,

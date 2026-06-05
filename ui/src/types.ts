@@ -1,4 +1,8 @@
-export type Kind = 'company' | 'name' | 'address';
+// Splitter-only types. Phase C stripped this down from the cleaners-hub
+// multi-kind shape (company / name / address) to a single ``fullname`` kind.
+// Anything that switches on ``kind`` is now unreachable — there's only one.
+
+export type Kind = 'fullname';
 
 // Backend session.state values that come down the SSE stream.
 export type RunState =
@@ -11,8 +15,8 @@ export type RunState =
   | 'error'
   | 'spend_blocked';
 
-// Derived UI state — what the workspace renders. Mirrors the desktop
-// Nocturne states. Computed from RunState + slice presence.
+// Derived UI state — what the workspace renders. Computed from RunState +
+// slice presence.
 export type AppState =
   | 'empty'             // no upload yet
   | 'awaiting_column'   // uploaded, user picking column
@@ -27,42 +31,19 @@ export type RowStatus = 'changed' | 'unchanged' | 'null' | 'pending';
 export interface Row {
   n: number;
   orig: string;
+  // Splitter output: two independent cells. Either can be null (or empty),
+  // meaning Grok declined to split that part. Both null → the row is in the
+  // ``null`` status (red row state).
+  first: string | null;
+  last: string | null;
+  // Legacy "<first> <last>" mirror string. Some consumers (notably the
+  // dry-run-sample mapper) still want a single display string; new UI code
+  // reads first/last directly.
   clean: string | null;
   status: RowStatus;
   reason: string;
   flags?: string[];
   route?: string | null;
-}
-
-// Address tab — different row shape than company/name. Two inputs
-// (business_name + website_url), seven structured outputs, plus a
-// status/error tag. Streamed from the backend via _address_ctx_to_row.
-export type AddressRowStatus = 'pending' | 'extracted' | 'blank' | 'foreign' | 'fetch_failed';
-export type AddressErrorTag =
-  | ''
-  | 'FOREIGN'
-  | 'CLOUDFLARE'
-  | 'SITE_BROKEN'
-  | 'DEAD_DOMAIN'
-  | 'TLS_ERROR'
-  | 'NO_RESPONSE'
-  | 'EMPTY_RENDER'
-  | 'LLM_UNAVAILABLE';
-
-export interface AddressRow {
-  n: number;
-  business_name: string;
-  website_url: string;
-  street: string;
-  city: string;
-  state: string;
-  zip: string;
-  country: string;
-  source_url: string;
-  confidence: number;
-  error: AddressErrorTag;
-  status: AddressRowStatus;
-  flags?: string[];
 }
 
 // Single column from /api/columns — includes server-side samples.
@@ -77,9 +58,6 @@ export interface ColumnsResponse {
   columns: ColumnInfo[];
   row_count_estimate: number;
   suggested: string | null;
-  // Address kind only — when present, suggested_pair carries both
-  // pre-selected columns (business name + website URL).
-  suggested_pair?: { name: string | null; website: string | null } | null;
 }
 
 // /api/dry-run cost-pre-check (NOT the dry-run-sample — that's below).
@@ -150,34 +128,23 @@ export interface RunsListResponse {
   rows: RunRecord[];
 }
 
-// /api/settings — mutable runtime settings.
+// /api/settings — mutable runtime settings. Splitter only.
 export interface AppSettings {
   daily_cap_usd: number;
-  batch_size_company: number;
-  batch_size_name: number;
-  batch_size_address: number;
-  model_company: string;
-  model_name: string;
-  model_address: string;
+  batch_size_fullname: number;
+  model_fullname: string;
   is_admin: boolean;
   hard_cap_usd: number;
   min_batch_size: number;
   max_batch_size: number;
-  min_batch_size_address?: number;
-  max_batch_size_address?: number;
   min_daily_cap_usd: number;
   allowed_models: string[];
-  allowed_models_address?: string[];
 }
 
 export type AppSettingsPatch = Partial<{
   daily_cap_usd: number;
-  batch_size_company: number;
-  batch_size_name: number;
-  batch_size_address: number;
-  model_company: string;
-  model_name: string;
-  model_address: string;
+  batch_size_fullname: number;
+  model_fullname: string;
 }>;
 
 // Derived from upload + columns.
@@ -186,9 +153,6 @@ export interface FileMeta {
   rows: number;
   encoding: string;       // not surfaced by backend; stays as 'utf-8' placeholder
   column: string;         // currently selected column (may be empty pre-pick)
-  // Address kind only — secondary column (business-name) when kind="address".
-  // The primary `column` field stores the website URL column.
-  secondary_column?: string;
   columns?: string[];
 }
 
@@ -207,17 +171,6 @@ export interface Telemetry {
   nullCount: number;
   rulesFired: number;
   costUsd: number;
-  // Address-tab additions — populated only when kind="address". These
-  // come from _address_stats_to_telemetry on the backend. Optional so
-  // company/name don't have to set them.
-  extractedCount?: number;
-  blankCount?: number;
-  foreignCount?: number;
-  fetchFailedCount?: number;
-  // Per-error-tag bucket counts so the UI can show what KIND of failure is
-  // dominant (CLOUDFLARE vs EMPTY_RENDER vs SITE_BROKEN, etc.). Populated only
-  // for the address tab; keys are AddressErrorTag values, values are counts.
-  errorBreakdown?: Record<string, number>;
 }
 
 export interface UiError {
@@ -227,15 +180,10 @@ export interface UiError {
   lastRow: number;
 }
 
-// Filter values used in the workspace header pills. The set is kind-aware:
-//   - company / name use: all | changed | unchanged | null
-//   - address uses:        all | extracted | blank | foreign | fetch_failed
-// Stored on the slice as a single union; the workspace header and tables
-// branch on the active kind to show / apply the right subset.
+// Filter values used in the workspace header pills.
 export type FilterKind =
   | 'all'
-  | 'changed' | 'unchanged' | 'null'
-  | 'extracted' | 'blank' | 'foreign' | 'fetch_failed';
+  | 'changed' | 'unchanged' | 'null';
 export type DryRunKind = 'changed' | 'same' | 'flag' | 'blank';
 
 // What the workspace renders during dry-run-sample. Rows are mapped from

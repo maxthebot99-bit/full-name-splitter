@@ -68,19 +68,41 @@ def _modules_for(kind: str):
 
 
 def _ctx_to_row(n: int, ctx) -> dict[str, Any]:
-    """Mirror legacy ``shell._ctx_to_row``. Same shape the React store expects."""
+    """Splitter row payload — two output cells (first, last) per row.
+
+    Forked from the legacy single-string ``shell._ctx_to_row``. The UI now
+    renders First Name / Last Name as separate columns, so we surface both
+    parts on the SSE/HTTP payload. ``clean`` is preserved as a "<first>
+    <last>" mirror for any consumer that still wants a single display string
+    (notably the dry-run-sample mapper).
+
+    Status semantics:
+      - ``null``     — Grok declined to split (both parts None / is_null).
+      - ``unchanged``— neither part differs from the original cell.
+      - ``changed``  — Grok produced a different value than the input.
+    """
+    first = getattr(ctx, "first", None)
+    last = getattr(ctx, "last", None)
     if ctx.is_null:
-        clean = None
+        clean: str | None = None
         status = "null"
-    elif (ctx.current or "").strip() == (ctx.original or "").strip():
-        clean = ctx.current
-        status = "unchanged"
     else:
-        clean = ctx.current
-        status = "changed"
+        joined = " ".join(p for p in (first, last) if p)
+        clean = joined or None
+        if clean is None:
+            status = "null"
+        elif clean.strip() == (ctx.original or "").strip():
+            status = "unchanged"
+        else:
+            status = "changed"
     return {
         "n": n,
         "orig": ctx.original,
+        "first": first,
+        "last": last,
+        # Legacy mirror — "<first> <last>" or None. Some consumers still
+        # read this (the dry-run-sample mapper, history downloads). Newer
+        # UI code reads first/last directly.
         "clean": clean,
         "status": status,
         "reason": ctx.llm_reason or "",
@@ -115,6 +137,14 @@ def _ensure_partial_state(session: Session, column: str) -> bool:
     worker calls this too so its skip-already-cleaned logic always sees a
     sized contexts list.
     """
+    # Fast path: a completed run has already populated source_df + contexts.
+    # No need to revisit the source file (or even require it to exist on disk
+    # — tests seed sessions in-memory without an upload).
+    if session.source_df is not None and session.contexts:
+        if session.selected_column is None:
+            session.selected_column = column
+        return True
+
     if session.upload_path is None:
         return False
     meta = getattr(session, "_file_meta_obj", None)
@@ -166,15 +196,25 @@ def _passthrough_context(kind: str, original: str):
 
 
 def _row_payload(n: int, ctx: Any | None, *, orig: str = "",
+                 first: str | None = None, last: str | None = None,
                  clean: str | None = None, status: str = "pending",
                  reason: str = "") -> dict[str, Any]:
     """Build the SSE/HTTP row payload either from a Context (preferred when
-    present) or from raw fields (used for pre-run override / pending rows)."""
+    present) or from raw fields (used for pre-run override / pending rows).
+
+    Splitter shape: first/last are independent string-or-None fields; clean
+    is the legacy "<first> <last>" mirror.
+    """
     if ctx is not None:
         return _ctx_to_row(n, ctx)
+    if clean is None and (first or last):
+        joined = " ".join(p for p in (first, last) if p)
+        clean = joined or None
     return {
         "n": n,
         "orig": orig,
+        "first": first,
+        "last": last,
         "clean": clean,
         "status": status,
         "reason": reason,
@@ -750,13 +790,19 @@ def apply_override(
     session: Session,
     *,
     n: int,
-    cleaned: str | None,
+    first: str | None,
+    last: str | None,
     column: str | None = None,
 ) -> dict[str, Any] | None:
-    """Set/clear a manual override for row ``n``. Rewrites output CSV.
+    """Set/clear a manual (first, last) override for row ``n``. Rewrites
+    output CSV.
 
-    ``cleaned=None`` clears the override (restoring the Grok value, if
-    any). Works pre-run via the same lazy-init path rerun_one_row uses.
+    Splitter shape: an override is two independent cells. Sending ``None``
+    (or empty) for BOTH parts clears the override entirely (restoring the
+    Grok value, if any). Sending one part empty just blanks that cell; the
+    writer treats both-empty as is_null.
+
+    Works pre-run via the same lazy-init path rerun_one_row uses.
     """
     target_col = session.selected_column or column
     if target_col is None:
@@ -766,10 +812,14 @@ def apply_override(
     if n < 1 or n > len(session.contexts):
         return None
 
-    if cleaned is None:
+    # Empty strings collapse to None so the writer treats them as null cells.
+    f_val: str | None = first if (first is not None and first != "") else None
+    l_val: str | None = last if (last is not None and last != "") else None
+    both_empty = f_val is None and l_val is None
+    if both_empty:
         session.overrides.pop(n - 1, None)
     else:
-        session.overrides[n - 1] = cleaned
+        session.overrides[n - 1] = (f_val, l_val)
 
     # Build the row payload — prefer an existing Context, else read the
     # raw value from source_df so the user sees their override against
@@ -785,17 +835,26 @@ def apply_override(
         except Exception as e:
             _log.warning("override read from source_df failed: %r", e)
             return None
-        payload = _row_payload(n, None, orig=original, clean=None,
+        payload = _row_payload(n, None, orig=original,
                                status="pending", reason="")
 
-    if cleaned is not None:
-        payload["clean"] = cleaned
-        payload["status"] = "changed" if cleaned != original else "unchanged"
+    if not both_empty:
+        joined = " ".join(p for p in (f_val, l_val) if p)
+        clean = joined or None
+        payload["first"] = f_val
+        payload["last"] = l_val
+        payload["clean"] = clean
+        if clean is None:
+            payload["status"] = "null"
+        else:
+            payload["status"] = "changed" if clean != original else "unchanged"
         payload["reason"] = "manual override"
     elif ctx is None:
         # Override cleared and there's no Grok value either → row is back
         # to pending.
         payload["status"] = "pending"
+        payload["first"] = None
+        payload["last"] = None
         payload["clean"] = None
         payload["reason"] = ""
 
@@ -814,7 +873,7 @@ def apply_override(
             _log.warning("override output rewrite failed: %r", e)
 
     audit("override_row", email=session.email, session_id=session.sid,
-          kind=session.kind, row_n=n, cleared=(cleaned is None),
+          kind=session.kind, row_n=n, cleared=both_empty,
           pre_run=(ctx is None))
 
     Pusher(session).push("row_update", payload)

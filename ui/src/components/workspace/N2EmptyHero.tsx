@@ -1,14 +1,6 @@
 import { N2, fSerif } from '../../theme';
-import { useStore } from '../../store';
 
 export function N2EmptyHero() {
-  const kind = useStore((s) => s.active);
-  const subject =
-    kind === 'company' ? 'company names'
-    : kind === 'address' ? 'business addresses'
-    : 'first names';
-  const verb = kind === 'address' ? 'extracts' : 'reads';
-  const subjectSingular = subject.replace(/s$/, '');
   return (
     <div
       style={{
@@ -47,7 +39,7 @@ export function N2EmptyHero() {
             fontVariationSettings: '"opsz" 144',
           }}
         >
-          We'll read it carefully.
+          We'll split it carefully.
         </div>
         <div
           style={{
@@ -59,7 +51,9 @@ export function N2EmptyHero() {
             margin: '26px auto 0',
           }}
         >
-          Drop a CSV on the left. {kind === 'address' ? 'Llama' : 'Grok'} {verb} each {subjectSingular},{kind === 'address' ? ' verifies the source,' : ' explains what\'s off,'} and returns an auditable list — every {kind === 'address' ? 'extraction' : 'change'}, with reasoning.
+          Drop a CSV on the left. Grok reads each full name, splits it into
+          First Name and Last Name, explains what it parsed, and returns an
+          auditable list — every split, with reasoning.
         </div>
       </div>
     </div>

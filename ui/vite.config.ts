@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react';
 import { fileURLToPath, URL } from 'node:url';
 
 // Build output goes into the Python package so it ships with the wheel.
-const OUT_DIR = fileURLToPath(new URL('../src/cleaners_hub/ui_dist', import.meta.url));
+const OUT_DIR = fileURLToPath(new URL('../src/full_name_splitter/ui_dist', import.meta.url));
 
 export default defineConfig({
   plugins: [react()],

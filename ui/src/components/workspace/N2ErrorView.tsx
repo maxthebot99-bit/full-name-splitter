@@ -11,7 +11,7 @@ const td: CSSProperties = {
 };
 
 export function N2ErrorView() {
-  const slice = useStore((s) => s[s.active]);
+  const slice = useStore((s) => s.fullname);
   const error = slice.error;
   const spendBlocked = slice.spendBlocked;
   const lastRows = slice.rows.slice(-3);

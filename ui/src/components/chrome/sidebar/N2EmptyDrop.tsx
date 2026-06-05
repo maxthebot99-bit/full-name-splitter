@@ -1,18 +1,16 @@
 import { useState } from 'react';
 import { N2, fSerif, fMono } from '../../../theme';
-import { useStore } from '../../../store';
 import { handleFileSelected, pickFile } from '../../../lib/actions';
 
 export function N2EmptyDrop() {
-  const kind = useStore((s) => s.active);
   const [hover, setHover] = useState(false);
   return (
     <div
       role="button"
       tabIndex={0}
-      onClick={() => pickFile(kind)}
+      onClick={() => pickFile()}
       onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') pickFile(kind);
+        if (e.key === 'Enter' || e.key === ' ') pickFile();
       }}
       onDragOver={(e) => {
         e.preventDefault();
@@ -23,7 +21,7 @@ export function N2EmptyDrop() {
         e.preventDefault();
         setHover(false);
         const f = e.dataTransfer.files?.[0];
-        if (f) void handleFileSelected(kind, f);
+        if (f) void handleFileSelected(f);
       }}
       style={{
         padding: '36px 18px',

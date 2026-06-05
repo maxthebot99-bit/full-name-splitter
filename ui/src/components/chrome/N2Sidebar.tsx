@@ -19,7 +19,7 @@ import { N2Progress } from './sidebar/N2Progress';
 import { N2Telemetry } from './sidebar/N2Telemetry';
 
 export function N2Sidebar({ view }: { view: AppState }) {
-  const slice = useStore((s) => s[s.active]);
+  const slice = useStore((s) => s.fullname);
   const file = slice.file;
   const error = slice.error;
   const mapperSelected = slice.mapperSelectedColumn;
@@ -42,7 +42,7 @@ export function N2Sidebar({ view }: { view: AppState }) {
   const estSub = file
     ? `${effectiveRows.toLocaleString('en-US')} rows · ~${fmtCost(estimateRunCost(effectiveRows))}`
     : 'load a csv to begin';
-  const ctaLabel = isPartial ? 'Continue cleaning' : 'Begin cleaning';
+  const ctaLabel = isPartial ? 'Continue splitting' : 'Begin splitting';
 
   return (
     <aside
@@ -63,7 +63,7 @@ export function N2Sidebar({ view }: { view: AppState }) {
           label="Confirm column"
           sub={
             mapperSelected
-              ? `cleaning column "${mapperSelected}"`
+              ? `splitting column "${mapperSelected}"`
               : 'pick a column on the right to continue'
           }
           disabled={!mapperSelected}
@@ -74,7 +74,7 @@ export function N2Sidebar({ view }: { view: AppState }) {
       {(view === 'indexed' || view === 'cancelled') && (
         <>
           <N2CtaPrimary
-            label={view === 'cancelled' ? 'Continue cleaning' : ctaLabel}
+            label={view === 'cancelled' ? 'Continue splitting' : ctaLabel}
             sub={estSub}
             onClick={() =>
               beginCleaningWithCostCheck(
@@ -83,10 +83,7 @@ export function N2Sidebar({ view }: { view: AppState }) {
               )
             }
           />
-          {view === 'indexed' && slice.kind !== 'address' && (
-            // The address pipeline doesn't have a dry-run-sample endpoint
-            // (each row is a fetch + LLM call, no batched sample shape).
-            // Hide the CTA to avoid showing a button that 404s.
+          {view === 'indexed' && (
             <N2TryDryRunCta onClick={() => runDryRun(file?.column ?? '', 25)} />
           )}
         </>
@@ -100,7 +97,7 @@ export function N2Sidebar({ view }: { view: AppState }) {
       {view === 'empty' && <N2EmptyDrop />}
 
       {view === 'empty' && (
-        <N2CtaPrimary label="Begin cleaning" sub="load a csv to begin" disabled />
+        <N2CtaPrimary label="Begin splitting" sub="load a csv to begin" disabled />
       )}
       {view === 'error' && (
         <N2CtaPrimary
@@ -201,7 +198,7 @@ function RowLimitInput({
           marginBottom: 6,
         }}
       >
-        Rows to clean
+        Rows to split
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <input
@@ -235,7 +232,7 @@ function RowLimitInput({
         <button
           type="button"
           onClick={() => onChange(0)}
-          title="Clean every row"
+          title="Split every row"
           style={{
             background: value === 0 ? 'rgba(199,179,255,0.14)' : 'transparent',
             border: `1px solid ${value === 0 ? N2.accent : N2.hair2}`,

@@ -15,35 +15,21 @@ interface Props {
   color?: string;
 }
 
-const DEFAULT_PHRASES_COMPANY = [
+// Splitter-only phrases. The original cleaners-hub atom shipped three
+// vocabularies (company / first-name / address); the splitter has one.
+export const PHRASES_FULLNAME = [
   'reading',
   'asking grok',
-  'stripping suffixes',
+  'finding the split',
   'normalizing case',
+  'handling particles',
   'reconciling',
-  'checking stylization',
 ];
 
-export const PHRASES_COMPANY = DEFAULT_PHRASES_COMPANY;
-export const PHRASES_NAME = [
-  'reading',
-  'asking grok',
-  'parsing',
-  'normalizing case',
-  'expanding initials',
-  'reconciling',
-];
-export const PHRASES_ADDRESS = [
-  'fetching site',
-  'reading footer',
-  'parsing JSON-LD',
-  'asking llama',
-  'extracting fields',
-  'verifying scope',
-];
+const DEFAULT_PHRASES_FULLNAME = PHRASES_FULLNAME;
 
 export function N2Thinking({
-  phrases = DEFAULT_PHRASES_COMPANY,
+  phrases = DEFAULT_PHRASES_FULLNAME,
   detail,
   size = 'sm',
   color = N2.accent,

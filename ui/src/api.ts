@@ -1,4 +1,4 @@
-// HTTP + SSE client for cleaners-hub. Every /api/* request gets the
+// HTTP + SSE client for full-name-splitter. Every /api/* request gets the
 // X-Requested-With CSRF header (the FastAPI middleware rejects without it).
 
 import type {
@@ -7,7 +7,6 @@ import type {
   ColumnsResponse,
   DryRunResponse,
   DryRunSampleResponse,
-  Kind,
   RunRecord,
   RunsListResponse,
   SseEvent,
@@ -16,7 +15,7 @@ import type {
   Row,
 } from './types';
 
-const HEADERS = { 'X-Requested-With': 'cleaners-hub' };
+const HEADERS = { 'X-Requested-With': 'full-name-splitter' };
 const HEADERS_JSON = { ...HEADERS, 'Content-Type': 'application/json' };
 
 async function jsonOrThrow(res: Response): Promise<unknown> {
@@ -59,9 +58,10 @@ export async function whoami(): Promise<WhoamiResponse> {
   return jsonOrThrow(r) as Promise<WhoamiResponse>;
 }
 
-export async function uploadFile(kind: Kind, file: File): Promise<UploadResponse> {
+export async function uploadFile(file: File): Promise<UploadResponse> {
   const fd = new FormData();
-  fd.append('kind', kind);
+  // Backend only knows about the ``fullname`` kind — splitter is single-kind.
+  fd.append('kind', 'fullname');
   fd.append('file', file);
   const r = await fetch('/api/upload', { method: 'POST', headers: HEADERS, body: fd });
   return jsonOrThrow(r) as Promise<UploadResponse>;
@@ -89,14 +89,11 @@ export async function startRun(
   sid: string,
   column: string,
   rowLimit?: number,
-  secondaryColumn?: string,
 ): Promise<void> {
-  const body: {
-    column: string;
-    rowLimit: number | null;
-    secondary_column?: string;
-  } = { column, rowLimit: rowLimit ?? null };
-  if (secondaryColumn) body.secondary_column = secondaryColumn;
+  const body: { column: string; rowLimit: number | null } = {
+    column,
+    rowLimit: rowLimit ?? null,
+  };
   const r = await fetch(`/api/run/${sid}`, {
     method: 'POST',
     headers: HEADERS_JSON,
@@ -110,8 +107,10 @@ export async function cancelRun(sid: string): Promise<void> {
   if (!r.ok) await jsonOrThrow(r);
 }
 
-export function downloadUrl(sid: string): string {
-  return `/api/download/${sid}`;
+export function downloadUrl(sid: string, opts?: { dropNull?: boolean }): string {
+  return opts?.dropNull
+    ? `/api/download/${sid}?dropNull=1`
+    : `/api/download/${sid}`;
 }
 
 // ─── v1.5 endpoints ─────────────────────────────────────────────────────
@@ -125,13 +124,8 @@ export async function preview(
   sid: string,
   column: string,
   count = 200,
-  secondaryColumn?: string,
 ): Promise<PreviewResponse> {
-  const body: { column: string; count: number; secondary_column?: string } = {
-    column,
-    count,
-  };
-  if (secondaryColumn) body.secondary_column = secondaryColumn;
+  const body = { column, count };
   const r = await fetch(`/api/preview/${sid}`, {
     method: 'POST',
     headers: HEADERS_JSON,
@@ -156,12 +150,13 @@ export async function dryRunSample(
 export async function overrideRow(
   sid: string,
   n: number,
-  cleaned: string | null,
+  first: string | null,
+  last: string | null,
 ): Promise<Row> {
   const r = await fetch(`/api/rows/${sid}/${n}`, {
     method: 'POST',
     headers: HEADERS_JSON,
-    body: JSON.stringify({ cleaned }),
+    body: JSON.stringify({ first, last }),
   });
   return jsonOrThrow(r) as Promise<Row>;
 }
@@ -176,13 +171,11 @@ export async function rerunRow(sid: string, n: number): Promise<Row> {
 }
 
 export async function listRuns(opts?: {
-  kind?: Kind;
   limit?: number;
   offset?: number;
   mineOnly?: boolean;
 }): Promise<RunsListResponse> {
   const params = new URLSearchParams();
-  if (opts?.kind) params.set('kind', opts.kind);
   if (opts?.limit != null) params.set('limit', String(opts.limit));
   if (opts?.offset != null) params.set('offset', String(opts.offset));
   if (opts?.mineOnly) params.set('mine_only', 'true');
@@ -224,9 +217,8 @@ export async function sendTestAlert(): Promise<{ sent: boolean; error?: string }
 
 // ─── SSE ────────────────────────────────────────────────────────────────
 
-// EventSource for streaming progress. The caller handles routing the events
-// to the right slice — see store.handleSseEvent. EventSource sends GET with
-// no custom headers; the server allows /api/events/* without X-Requested-With.
+// EventSource for streaming progress. EventSource sends GET with no
+// custom headers; the server allows /api/events/* without X-Requested-With.
 export function openEventStream(
   sid: string,
   onEvent: (e: SseEvent) => void,
@@ -240,7 +232,6 @@ export function openEventStream(
     }
   };
   es.onerror = (err) => {
-    // EventSource auto-reconnects on transient errors; only log.
     console.warn('[sse] error', err);
   };
   return es;

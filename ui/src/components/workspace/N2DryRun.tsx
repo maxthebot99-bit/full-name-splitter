@@ -8,7 +8,7 @@ import { closeDryRun } from '../../lib/actions';
 // cost), the four tally tabs, and the diff table. Closing returns to the
 // table or the column mapper.
 export function N2DryRun() {
-  const slice = useStore((s) => s[s.active]);
+  const slice = useStore((s) => s.fullname);
   const result = slice.dryRun;
   const loading = slice.dryRunLoading;
   const filter = slice.dryRunFilter;
@@ -202,11 +202,11 @@ export function N2DryRun() {
           flexShrink: 0,
         }}
       >
-        <TallyTab active={filter === 'all'} onClick={() => setDryRunFilter(slice.kind, 'all')} count={counts.all} label="rows processed" countColor={N2.text} />
-        <TallyTab active={filter === 'changed'} onClick={() => setDryRunFilter(slice.kind, 'changed')} count={counts.changed} label="cleaned" countColor={N2.accent} />
-        <TallyTab active={filter === 'same'} onClick={() => setDryRunFilter(slice.kind, 'same')} count={counts.same} label="already clean" countColor={N2.text2} />
-        <TallyTab active={filter === 'flag'} onClick={() => setDryRunFilter(slice.kind, 'flag')} count={counts.flag} label="flagged · review" countColor="#e8b356" />
-        <TallyTab active={filter === 'blank'} onClick={() => setDryRunFilter(slice.kind, 'blank')} count={counts.blank} label="blank" countColor={N2.text4} last />
+        <TallyTab active={filter === 'all'} onClick={() => setDryRunFilter('all')} count={counts.all} label="rows processed" countColor={N2.text} />
+        <TallyTab active={filter === 'changed'} onClick={() => setDryRunFilter('changed')} count={counts.changed} label="cleaned" countColor={N2.accent} />
+        <TallyTab active={filter === 'same'} onClick={() => setDryRunFilter('same')} count={counts.same} label="already clean" countColor={N2.text2} />
+        <TallyTab active={filter === 'flag'} onClick={() => setDryRunFilter('flag')} count={counts.flag} label="flagged · review" countColor="#e8b356" />
+        <TallyTab active={filter === 'blank'} onClick={() => setDryRunFilter('blank')} count={counts.blank} label="blank" countColor={N2.text4} last />
       </div>
 
       <div

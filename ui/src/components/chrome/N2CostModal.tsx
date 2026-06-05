@@ -6,7 +6,7 @@ import { confirmCostModal, cancelCostModal } from '../../lib/actions';
 // Cost-ceiling confirmation. Mounted when the active slice has costModal
 // populated. Confirm routes the pending args to startRun; Cancel clears.
 export function N2CostModal() {
-  const modal = useStore((s) => s[s.active].costModal);
+  const modal = useStore((s) => s.fullname.costModal);
 
   // Escape closes the modal — standard ARIA dialog behavior. Hook is
   // declared at the top level (before the early return) so React's rules

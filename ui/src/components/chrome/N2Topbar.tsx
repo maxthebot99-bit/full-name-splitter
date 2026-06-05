@@ -1,5 +1,5 @@
 import { N2, fSerif, fMono, fBody } from '../../theme';
-import type { AppState, Kind } from '../../types';
+import type { AppState } from '../../types';
 import { useStore } from '../../store';
 import { getBackAction, openHistory } from '../../lib/actions';
 
@@ -19,13 +19,11 @@ interface Props {
 
 export function N2Topbar({ view }: Props) {
   const l = LABELS[view];
-  const active = useStore((s) => s.active);
-  const setActive = useStore((s) => s.setActive);
   const whoami = useStore((s) => s.whoami);
   const setSettingsOpen = useStore((s) => s.setSettingsModalOpen);
   // Re-render when dry-run flips so the back-button label re-evaluates.
-  const dryRun = useStore((s) => s[s.active].dryRun);
-  const dryRunLoading = useStore((s) => s[s.active].dryRunLoading);
+  const dryRun = useStore((s) => s.fullname.dryRun);
+  const dryRunLoading = useStore((s) => s.fullname.dryRunLoading);
   void dryRun;
   void dryRunLoading;
   const back = getBackAction();
@@ -46,10 +44,9 @@ export function N2Topbar({ view }: Props) {
         flexWrap: 'wrap',
       }}
     >
-      {/* Brand block: back button (when relevant) + brand mark + tabs.
-          Sits as one logical group with subtle internal hairlines so the
-          three sub-elements read as related rather than three separate
-          floating chips. */}
+      {/* Brand block: back button (when relevant) + brand mark + scope label.
+          Splitter is single-kind, so the segmented tab control from the
+          original cleaners-hub topbar collapses into a static label. */}
       <div
         style={{
           display: 'flex',
@@ -99,24 +96,28 @@ export function N2Topbar({ view }: Props) {
             whiteSpace: 'nowrap',
           }}
         >
-          Cleaners Hub
+          Full Name Splitter
         </div>
         <Divider />
-        {/* Segmented tab control — single connected pill rather than two
-            separate buttons. Reads as one switch instead of two chips. */}
         <div
-          role="tablist"
-          aria-label="Cleaner kind"
+          aria-label="scope"
           style={{
             display: 'inline-flex',
+            alignItems: 'center',
+            padding: '7px 14px',
             border: `1px solid ${N2.hair2}`,
             borderRadius: 2,
-            overflow: 'hidden',
+            background: 'rgba(199,179,255,0.08)',
+            color: N2.accent,
+            fontFamily: fMono,
+            fontSize: 10,
+            letterSpacing: 1.6,
+            textTransform: 'uppercase',
+            fontWeight: 700,
+            boxShadow: `inset 0 -2px 0 ${N2.accent}`,
           }}
         >
-          <SegBtn label="Companies" kind="company" active={active} onSelect={setActive} />
-          <SegBtn label="First Names" kind="name" active={active} onSelect={setActive} />
-          <SegBtn label="Addresses" kind="address" active={active} onSelect={setActive} last />
+          Full Names
         </div>
       </div>
 
@@ -154,9 +155,7 @@ export function N2Topbar({ view }: Props) {
         {l.txt}
       </div>
 
-      {/* Right block: spend → history → settings → grok chip.
-          Separated from status by gap; chrome buttons share one outline
-          group so they read as related actions, not three loose chips. */}
+      {/* Right block: spend → help / history / settings → grok chip. */}
       <div
         style={{
           display: 'flex',
@@ -188,18 +187,14 @@ export function N2Topbar({ view }: Props) {
             <ChromeBtn label="Settings" onClick={() => setSettingsOpen(true)} last />
           )}
         </div>
-        <ProviderChip kind={active} />
+        <ProviderChip />
       </div>
     </header>
   );
 }
 
-// Provider chip — shows which LLM vendor backs the currently-active tab.
-// Company / first-name → xAI Grok. Address → Gemini via OpenRouter (was Llama).
-function ProviderChip({ kind }: { kind: 'company' | 'name' | 'address' }) {
-  const isAddress = kind === 'address';
-  const label = isAddress ? 'gemini' : 'grok';
-  const glyph = isAddress ? '✦' : '𝕏';
+// Splitter is Grok-only — no Gemini / OpenRouter branch.
+function ProviderChip() {
   return (
     <div
       style={{
@@ -219,19 +214,19 @@ function ProviderChip({ kind }: { kind: 'company' | 'name' | 'address' }) {
           width: 22,
           height: 22,
           borderRadius: 100,
-          background: isAddress ? '#1f1d2e' : '#000',
+          background: '#000',
           display: 'grid',
           placeItems: 'center',
-          fontSize: isAddress ? 13 : 11,
+          fontSize: 11,
           fontWeight: 700,
           color: '#fff',
           fontFamily: fBody,
         }}
       >
-        {glyph}
+        𝕏
       </span>
       <span style={{ fontFamily: fMono, fontSize: 10.5, letterSpacing: 0.3 }}>
-        {label}
+        grok
       </span>
       <span
         style={{
@@ -331,49 +326,6 @@ function ChromeBtn({
         const el = e.currentTarget as HTMLButtonElement;
         el.style.background = 'transparent';
         el.style.color = N2.text2;
-      }}
-    >
-      {label}
-    </button>
-  );
-}
-
-function SegBtn({
-  label,
-  kind,
-  active,
-  onSelect,
-  last,
-}: {
-  label: string;
-  kind: Kind;
-  active: Kind;
-  onSelect: (k: Kind) => void;
-  last?: boolean;
-}) {
-  const on = active === kind;
-  return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={on}
-      onClick={() => onSelect(kind)}
-      style={{
-        background: on ? 'rgba(199,179,255,0.12)' : 'transparent',
-        border: 'none',
-        borderRight: last ? 'none' : `1px solid ${N2.hair2}`,
-        color: on ? N2.accent : N2.text3,
-        padding: '7px 14px',
-        fontFamily: fMono,
-        fontSize: 10,
-        letterSpacing: 1.6,
-        textTransform: 'uppercase',
-        fontWeight: 700,
-        cursor: 'pointer',
-        boxShadow: on
-          ? `inset 0 -2px 0 ${N2.accent}`
-          : 'none',
-        transition: 'all .12s ease',
       }}
     >
       {label}

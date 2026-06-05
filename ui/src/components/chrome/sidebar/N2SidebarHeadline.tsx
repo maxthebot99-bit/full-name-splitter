@@ -1,33 +1,15 @@
 import type { ReactNode } from 'react';
 import { N2, fSerif } from '../../../theme';
-import type { AppState, Kind } from '../../../types';
+import type { AppState } from '../../../types';
 import { useStore, processedRowCount } from '../../../store';
-import {
-  N2Thinking,
-  PHRASES_COMPANY,
-  PHRASES_NAME,
-  PHRASES_ADDRESS,
-} from '../../atoms/N2Thinking';
+import { N2Thinking, PHRASES_FULLNAME } from '../../atoms/N2Thinking';
 
 function fmtInt(n: number): string {
   return n.toLocaleString('en-US');
 }
 
-function noun(kind: Kind, plural = true): string {
-  if (kind === 'company') return plural ? 'company names' : 'company name';
-  if (kind === 'address') return plural ? 'business addresses' : 'business address';
-  return plural ? 'first names' : 'first name';
-}
-
-function pickColumnLabel(kind: Kind): string {
-  if (kind === 'company') return 'company';
-  if (kind === 'address') return 'business-name + website';
-  return 'first-name';
-}
-
 function contentFor(
   view: AppState,
-  kind: Kind,
   processed: number,
   total: number,
   lastRow: number,
@@ -37,13 +19,13 @@ function contentFor(
     case 'empty':
       return (
         <>
-          A quiet place to <em style={{ color: N2.accent }}>tidy</em> messy {noun(kind)}.
+          A quiet place to <em style={{ color: N2.accent }}>split</em> full names.
         </>
       );
     case 'awaiting_column':
       return (
         <>
-          {fmtInt(total)} rows — <em style={{ color: N2.accent }}>pick the {pickColumnLabel(kind)} column{kind === 'address' ? 's' : ''}</em>.
+          {fmtInt(total)} rows — <em style={{ color: N2.accent }}>pick the full-name column</em>.
         </>
       );
     case 'indexed':
@@ -51,7 +33,7 @@ function contentFor(
         return (
           <>
             {fmtInt(partialCleaned)} of {fmtInt(total)},{' '}
-            <em style={{ color: N2.accent }}>partially cleaned</em>.
+            <em style={{ color: N2.accent }}>partially split</em>.
           </>
         );
       }
@@ -63,19 +45,19 @@ function contentFor(
     case 'running':
       return (
         <>
-          {kind === 'address' ? 'Extracting' : 'Reading'} {kind === 'address' ? 'address' : 'name'} <em style={{ color: N2.accent }}>{fmtInt(processed)}</em> of {fmtInt(total)}.
+          Splitting name <em style={{ color: N2.accent }}>{fmtInt(processed)}</em> of {fmtInt(total)}.
         </>
       );
     case 'done':
       return (
         <>
-          All {fmtInt(total)} {noun(kind)}, <em style={{ color: N2.sage }}>reconciled</em>.
+          All {fmtInt(total)} names, <em style={{ color: N2.sage }}>split</em>.
         </>
       );
     case 'cancelled':
       return (
         <>
-          {fmtInt(partialCleaned)} of {fmtInt(total)} cleaned,{' '}
+          {fmtInt(partialCleaned)} of {fmtInt(total)} split,{' '}
           <em style={{ color: N2.ochre }}>paused</em>.
         </>
       );
@@ -89,20 +71,13 @@ function contentFor(
 }
 
 export function N2SidebarHeadline({ view }: { view: AppState }) {
-  const slice = useStore((s) => s[s.active]);
+  const slice = useStore((s) => s.fullname);
   const total = slice.file?.rows ?? 0;
   const partialCleaned = processedRowCount(slice);
   const inFlight = slice.rowsInFlight;
-  const phrases =
-    slice.kind === 'company'
-      ? PHRASES_COMPANY
-      : slice.kind === 'address'
-        ? PHRASES_ADDRESS
-        : PHRASES_NAME;
 
   // ▶ rerun in flight: replace the static headline with a live "thinking"
-  // strip naming the row(s) being processed. If the user has multiple
-  // reruns going, just show the count.
+  // strip naming the row(s) being processed.
   if (inFlight.length > 0) {
     const detail =
       inFlight.length === 1
@@ -110,7 +85,7 @@ export function N2SidebarHeadline({ view }: { view: AppState }) {
         : `${inFlight.length} rows`;
     return (
       <div style={{ minHeight: 32 }}>
-        <N2Thinking phrases={phrases} detail={detail} size="md" />
+        <N2Thinking phrases={PHRASES_FULLNAME} detail={detail} size="md" />
       </div>
     );
   }
@@ -129,7 +104,6 @@ export function N2SidebarHeadline({ view }: { view: AppState }) {
     >
       {contentFor(
         view,
-        slice.kind,
         slice.progress.processed,
         total,
         slice.error?.lastRow ?? 0,

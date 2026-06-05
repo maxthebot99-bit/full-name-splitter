@@ -165,97 +165,31 @@ export function N2SettingsModal() {
           />
         </Field>
 
+        {/* Splitter has a single Grok-based kind — one batch size + one model. */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-          <Field label="Batch size · companies">
+          <Field label="Batch size">
             <input
               type="number"
               min={settings.min_batch_size}
               max={settings.max_batch_size}
               disabled={!isAdmin || saving}
-              value={get('batch_size_company') ?? settings.batch_size_company}
+              value={get('batch_size_fullname') ?? settings.batch_size_fullname}
               onChange={(e) =>
-                setDraft((d) => ({ ...d, batch_size_company: Number(e.target.value) }))
+                setDraft((d) => ({ ...d, batch_size_fullname: Number(e.target.value) }))
               }
               style={inputStyle()}
             />
           </Field>
-          <Field label="Batch size · names">
-            <input
-              type="number"
-              min={settings.min_batch_size}
-              max={settings.max_batch_size}
-              disabled={!isAdmin || saving}
-              value={get('batch_size_name') ?? settings.batch_size_name}
-              onChange={(e) =>
-                setDraft((d) => ({ ...d, batch_size_name: Number(e.target.value) }))
-              }
-              style={inputStyle()}
-            />
-          </Field>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-          <Field label="Model · companies">
+          <Field label="Model">
             <select
               disabled={!isAdmin || saving}
-              value={get('model_company') ?? settings.model_company}
+              value={get('model_fullname') ?? settings.model_fullname}
               onChange={(e) =>
-                setDraft((d) => ({ ...d, model_company: e.target.value }))
+                setDraft((d) => ({ ...d, model_fullname: e.target.value }))
               }
               style={inputStyle()}
             >
               {settings.allowed_models.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Model · names">
-            <select
-              disabled={!isAdmin || saving}
-              value={get('model_name') ?? settings.model_name}
-              onChange={(e) =>
-                setDraft((d) => ({ ...d, model_name: e.target.value }))
-              }
-              style={inputStyle()}
-            >
-              {settings.allowed_models.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
-          </Field>
-        </div>
-
-        {/* Address tab — separate vendor (OpenRouter / Llama) than the
-            Grok-based company/name cleaners. Bounds and allowed-models
-            differ; render its own row. */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-          <Field label="Batch size · addresses">
-            <input
-              type="number"
-              min={settings.min_batch_size_address ?? 25}
-              max={settings.max_batch_size_address ?? 200}
-              disabled={!isAdmin || saving}
-              value={get('batch_size_address') ?? settings.batch_size_address ?? 100}
-              onChange={(e) =>
-                setDraft((d) => ({ ...d, batch_size_address: Number(e.target.value) }))
-              }
-              style={inputStyle()}
-            />
-          </Field>
-          <Field label="Model · addresses">
-            <select
-              disabled={!isAdmin || saving}
-              value={get('model_address') ?? settings.model_address ?? ''}
-              onChange={(e) =>
-                setDraft((d) => ({ ...d, model_address: e.target.value }))
-              }
-              style={inputStyle()}
-            >
-              {(settings.allowed_models_address ?? []).map((m) => (
                 <option key={m} value={m}>
                   {m}
                 </option>

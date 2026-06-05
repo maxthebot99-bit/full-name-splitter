@@ -292,7 +292,15 @@ class PreviewBody(BaseModel):
 
 
 class OverrideBody(BaseModel):
-    cleaned: str | None = Field(None, max_length=2000)
+    """Manual override body — splitter shape.
+
+    The splitter has TWO output cells per row (First Name / Last Name), so
+    overrides arrive as an independent (first, last) pair. Either part can
+    be cleared by sending null/empty for that field; sending null for BOTH
+    clears the override entirely (the writer treats both-empty as is_null).
+    """
+    first: str | None = Field(None, max_length=1000)
+    last: str | None = Field(None, max_length=1000)
 
 
 class RerunRowBody(BaseModel):
@@ -602,7 +610,17 @@ async def events(request: Request, sid: str = PathParam(...)):
 
 @app.get("/api/download/{sid}")
 @limiter.limit("30/minute")
-async def download(request: Request, sid: str = PathParam(...)):
+async def download(
+    request: Request,
+    sid: str = PathParam(...),
+    dropNull: int = Query(0, ge=0, le=1),
+):
+    """Stream the cleaned CSV.
+
+    ``?dropNull=1`` filters out rows where BOTH "First Name" and "Last Name"
+    cells are empty (the splitter's null sentinel). Used by the "Download
+    cleaned (drop NULL rows)" button in the result panel.
+    """
     sess = _require_owned_session(request, sid)
     if sess.state != "done" or sess.result_csv_path is None:
         raise HTTPException(409, "no result available")
@@ -610,15 +628,64 @@ async def download(request: Request, sid: str = PathParam(...)):
     if not out.exists():
         raise HTTPException(410, "result expired")
     base = Path(sess.upload_filename or "cleaned").stem
-    download_name = f"{base}__cleaned.csv"
+    drop = bool(dropNull)
+    download_name = (
+        f"{base}__cleaned__dropnull.csv" if drop else f"{base}__cleaned.csv"
+    )
     audit("download", email=_email_from_request(request), session_id=sid,
           kind=sess.kind, row_count=sess.result_row_count,
-          cost_usd=sess.result_cost_usd)
-    return FileResponse(
-        out,
+          cost_usd=sess.result_cost_usd, drop_null=drop)
+    if not drop:
+        return FileResponse(
+            out,
+            media_type="text/csv",
+            filename=download_name,
+            headers={"Cache-Control": "no-store"},
+        )
+    # dropNull mode: read, filter, stream. Stays in memory — runs already
+    # fit in RAM at write time (build_export_df does the same). For huge
+    # outputs the trade-off is acceptable; the soft-cap keeps row counts
+    # in a sane range.
+    try:
+        df = pd.read_csv(out, dtype=str, keep_default_na=False)
+    except Exception as e:
+        raise _safe_500("download_dropnull_read", e) from e
+
+    first_col = "First Name"
+    last_col = "Last Name"
+    if first_col not in df.columns or last_col not in df.columns:
+        # Defensive: a malformed output would otherwise blow up below. Fall
+        # back to the full file.
+        _log.warning("download dropNull: expected columns missing; serving full file")
+        return FileResponse(
+            out,
+            media_type="text/csv",
+            filename=download_name,
+            headers={"Cache-Control": "no-store"},
+        )
+
+    # Treat empty / whitespace-only cells as null.
+    keep = (df[first_col].astype(str).str.strip() != "") | (
+        df[last_col].astype(str).str.strip() != ""
+    )
+    filtered = df[keep]
+
+    import io
+
+    buf = io.StringIO()
+    filtered.to_csv(buf, index=False)
+    payload = buf.getvalue().encode("utf-8-sig")
+
+    def _gen():
+        yield payload
+
+    return StreamingResponse(
+        _gen(),
         media_type="text/csv",
-        filename=download_name,
-        headers={"Cache-Control": "no-store"},
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Disposition": f'attachment; filename="{download_name}"',
+        },
     )
 
 
@@ -676,6 +743,10 @@ async def preview(
         {
             "n": i + 1,
             "orig": (v or "").strip(),
+            # Splitter shape: two output cells (first, last) per row.
+            # Pre-run preview rows are pending — both empty.
+            "first": None,
+            "last": None,
             "clean": None,
             "status": "pending",
             "reason": "",
@@ -731,12 +802,14 @@ async def override_row(
     n: int = PathParam(..., ge=1, le=1_000_000),
 ) -> dict:
     sess = _require_owned_session(request, sid)
-    payload = apply_override(sess, n=n, cleaned=body.cleaned)
+    payload = apply_override(sess, n=n, first=body.first, last=body.last)
     if payload is None:
         raise HTTPException(404, f"row {n} not found in session")
+    cleared = (body.first is None or body.first == "") and (
+        body.last is None or body.last == ""
+    )
     audit("override_request", email=_email_from_request(request),
-          session_id=sid, kind=sess.kind, row_n=n,
-          cleared=(body.cleaned is None))
+          session_id=sid, kind=sess.kind, row_n=n, cleared=cleared)
     return payload
 
 

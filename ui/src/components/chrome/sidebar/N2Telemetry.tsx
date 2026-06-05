@@ -9,7 +9,7 @@ import { SPARKLINE } from '../../../utils/fixtures';
 import { fmtCost, fmtInt, fmtK } from '../../../utils/format';
 
 export function N2Telemetry({ view }: { view: AppState }) {
-  const slice = useStore((s) => s[s.active]);
+  const slice = useStore((s) => s.fullname);
   const t = slice.telemetry;
   const history = t.rowsPerSecondHistory.length >= 10 ? t.rowsPerSecondHistory : SPARKLINE;
 
