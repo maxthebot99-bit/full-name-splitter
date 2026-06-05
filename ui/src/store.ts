@@ -331,6 +331,23 @@ export function handleSseEvent(ev: SseEvent, expectedSid?: string): void {
       s.setSpendBlocked({ todayUsd: p.today_usd, capUsd: p.cap_usd });
       break;
     }
+    case 'cost_estimate_update': {
+      // Adaptive cost projection — backend tightens the forecast after
+      // every batch by averaging actual tokens/row. We patch the same
+      // Telemetry slice so the UI's projected-total + tokens-per-row
+      // tiles snap to truth between batches.
+      const p = ev.payload as {
+        costSpentSoFar?: number;
+        costProjectedTotal?: number;
+        tokensPerRowAvg?: number;
+      };
+      s.setTelemetry({
+        costSpentSoFar: p.costSpentSoFar,
+        costProjectedTotal: p.costProjectedTotal,
+        tokensPerRowAvg: p.tokensPerRowAvg,
+      });
+      break;
+    }
     default:
       // Unknown event — log once, ignore.
       console.warn('[sse] unknown event kind:', ev.kind, ev.payload);

@@ -441,6 +441,51 @@ def run_worker(
             except Exception as e:
                 _log.warning("spend record failed: %r", e)
 
+            # Adaptive cost projection — after each batch the actual
+            # tokens-per-row average tightens our forecast of remaining
+            # spend. Push it as a dedicated SSE event so the sidebar's
+            # "projected total" tile snaps to truth between batches.
+            try:
+                rows_processed = sum(
+                    1 for c in session.contexts if c is not None
+                )
+                # Total intended rows = whichever is smaller of "rows in
+                # file" and the user's optional row_limit; falls back to
+                # rows_processed once we're at end-of-run.
+                rows_in_file = meta.row_count_estimate
+                total_target = (
+                    rows_in_file if row_limit is None
+                    else min(int(row_limit), rows_in_file)
+                )
+                if total_target < rows_processed:
+                    total_target = rows_processed
+                usage_now = provider.running_usage()
+                pt_now = int(usage_now.get("prompt_tokens", 0))
+                ct_now = int(usage_now.get("completion_tokens", 0))
+                total_tokens_so_far = pt_now + ct_now
+                if rows_processed > 0:
+                    tokens_per_row_avg = (
+                        total_tokens_so_far / float(rows_processed)
+                    )
+                    cost_per_row_avg = (
+                        cumulative_cost / float(rows_processed)
+                    )
+                else:
+                    tokens_per_row_avg = 0.0
+                    cost_per_row_avg = 0.0
+                remaining = max(0, total_target - rows_processed)
+                projected_remaining = cost_per_row_avg * remaining
+                projected_total = cumulative_cost + projected_remaining
+                pusher.push("cost_estimate_update", {
+                    "costSpentSoFar": round(float(cumulative_cost), 6),
+                    "costProjectedTotal": round(float(projected_total), 6),
+                    "tokensPerRowAvg": round(float(tokens_per_row_avg), 2),
+                    "rowsProcessed": int(rows_processed),
+                    "rowsTotalTarget": int(total_target),
+                })
+            except Exception as e:
+                _log.warning("cost_estimate_update push failed: %r", e)
+
             if row_limit is not None and rows_seen >= row_limit:
                 break
             if spend_was_blocked:

@@ -67,6 +67,9 @@ export interface DryRunResponse {
   today_usd: number;
   cap_usd: number;
   would_exceed_cap: boolean;
+  // Diagnostic — surfaces whether the estimate came from tiktoken on the
+  // real prompt or from the legacy constant fallback. Safe to log / show.
+  estimate_breakdown?: Record<string, unknown>;
 }
 
 export interface UploadResponse {
@@ -171,6 +174,13 @@ export interface Telemetry {
   nullCount: number;
   rulesFired: number;
   costUsd: number;
+  // Adaptive cost-tightening fields — populated only while a run is in
+  // flight (backend pushes them on the ``cost_estimate_update`` SSE
+  // event after every batch's spend lands). Optional so initial state
+  // and completed-run state don't have to populate them.
+  costSpentSoFar?: number;
+  costProjectedTotal?: number;
+  tokensPerRowAvg?: number;
 }
 
 export interface UiError {

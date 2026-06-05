@@ -8,6 +8,7 @@ React store's handleSseEvent dispatcher):
   ("rows",          list[Row])                 — batch of cleaned rows
   ("row_update",    Row)                       — single-row rerun / override
   ("telemetry",     {...})                     — per-batch token + cost stats
+  ("cost_estimate_update", {...})              — projected total + tokens/row
   ("error",         {"code": int, "message": str})
   ("spend_cap_hit", {"today_usd": float, "cap_usd": float})
 

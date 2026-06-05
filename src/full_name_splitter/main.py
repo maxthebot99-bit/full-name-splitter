@@ -57,6 +57,10 @@ from slowapi.errors import RateLimitExceeded
 from full_name_splitter import __version__
 from full_name_splitter.alerts import alerter
 from full_name_splitter.audit import audit, setup_logging
+from full_name_splitter.cost_estimate import (
+    sample_rows_via_reader,
+    tiktoken_estimate,
+)
 from full_name_splitter.history import history
 from full_name_splitter.middleware import CSRFCheckMiddleware
 from full_name_splitter.sessions import (
@@ -121,6 +125,58 @@ def _rate_limit_key(request: Request) -> str:
 
 
 limiter = Limiter(key_func=_rate_limit_key)
+
+
+def _estimate_run_cost(
+    sess: Session, *, column: str, rows: int,
+) -> tuple[Decimal, dict]:
+    """Sharp pre-call estimate: tokenize the real prompt on a sample.
+
+    Returns a ``(Decimal estimate, breakdown)`` tuple. Decimal is quantized
+    to ``0.0001`` so it matches the format the legacy constant produced
+    (callers stash it into a Pydantic float, but Decimal is the right
+    internal currency type for the cap-check arithmetic).
+
+    On any failure we fall back to ``EST_USD_PER_ROW * rows`` so dry-run
+    + cap-pre-check never regress to "estimate broken, can't run".
+    """
+    if rows <= 0:
+        return Decimal("0.0000"), {
+            "source": "fallback_constant",
+            "reason": "zero_rows",
+            "total_rows": 0,
+        }
+    try:
+        import importlib
+        io_reader = importlib.import_module(
+            f"full_name_splitter.cleaners.{sess.kind}.io.reader"
+        )
+        xai_mod = importlib.import_module(
+            f"full_name_splitter.cleaners.{sess.kind}.llm.xai"
+        )
+        meta = getattr(sess, "_file_meta_obj", None)
+        sample = sample_rows_via_reader(io_reader, meta, column, n=20)
+        provider = xai_mod.XAIProvider()
+        # Use the configured runtime batch size — admin tweaks via
+        # /api/settings should reflect in the estimate immediately.
+        batch_size = app_settings().get().batch_size_for(sess.kind)
+        est_float, breakdown = tiktoken_estimate(
+            provider,
+            sample,
+            batch_size=int(batch_size),
+            total_rows=int(rows),
+            fallback_per_row=EST_USD_PER_ROW,
+        )
+    except Exception as e:
+        _log.warning("estimate_run_cost crashed; falling back: %r", e)
+        est = (Decimal(rows) * EST_USD_PER_ROW).quantize(Decimal("0.0001"))
+        return est, {
+            "source": "fallback_constant",
+            "reason": f"crash:{type(e).__name__}",
+            "total_rows": int(rows),
+        }
+    est = Decimal(str(est_float)).quantize(Decimal("0.0001"))
+    return est, breakdown
 
 
 def _suggest_column(kind: str, columns: list[str]) -> str | None:
@@ -510,14 +566,15 @@ async def dry_run(
     if body.rowLimit is not None:
         rows = min(rows, body.rowLimit)
 
-    est = (Decimal(rows) * EST_USD_PER_ROW).quantize(Decimal("0.0001"))
+    est, breakdown = _estimate_run_cost(sess, column=body.column, rows=rows)
     today = _spend.today_total_usd()
     soft_cap = Decimal(str(app_settings().get().daily_cap_usd))
     will_block = (today + est) > soft_cap
 
     audit("dry_run", email=_email_from_request(request), session_id=sid,
           kind=sess.kind, column=body.column, row_count=rows,
-          estimated_cost_usd=float(est))
+          estimated_cost_usd=float(est),
+          estimate_source=breakdown.get("source"))
 
     return {
         "row_count": rows,
@@ -525,6 +582,10 @@ async def dry_run(
         "today_usd": float(today),
         "cap_usd": float(soft_cap),
         "would_exceed_cap": will_block,
+        # Surface the math so the UI / debugger can show why the
+        # estimate is what it is. Safe to expose — no secrets, just
+        # token counts and the configured per-1k pricing constants.
+        "estimate_breakdown": breakdown,
     }
 
 
@@ -559,7 +620,7 @@ async def start_run(
         rows_in_file if body.rowLimit is None
         else min(body.rowLimit, rows_in_file)
     )
-    est_cost = (Decimal(effective) * EST_USD_PER_ROW).quantize(Decimal("0.0001"))
+    est_cost, _ = _estimate_run_cost(sess, column=body.column, rows=effective)
     try:
         alerter().run_started(
             email=email,

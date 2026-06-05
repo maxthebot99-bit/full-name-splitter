@@ -31,13 +31,27 @@ export function N2Telemetry({ view }: { view: AppState }) {
 
   const perRowCost = processedSnap > 0 ? live.costUsd / processedSnap : 0;
 
+  // While the run is live, the backend pushes ``cost_estimate_update``
+  // events with a tightening projected total — show that next to
+  // committed spend so the user can watch the bill home in on truth.
+  const projected = t.costProjectedTotal;
+  const showProjection =
+    view === 'running'
+    && typeof projected === 'number'
+    && projected > 0
+    && projected > live.costUsd;
+
   const cells: [string, string, string][] = [
     ['Tokens in', fmtK(live.tokensIn), N2.text],
     ['Tokens out', fmtK(live.tokensOut), N2.text],
     ['Nulls', fmtInt(t.nullCount), N2.rose],
     ['API calls', fmtInt(t.rulesFired), N2.text],
     ['Cost', fmtCost(live.costUsd), N2.accent],
-    ['$/row', fmtCost(perRowCost), N2.accent],
+    [
+      showProjection ? 'Projected' : '$/row',
+      showProjection ? fmtCost(projected!) : fmtCost(perRowCost),
+      N2.accent,
+    ],
   ];
 
   return (

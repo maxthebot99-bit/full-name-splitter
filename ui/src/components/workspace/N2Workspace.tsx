@@ -9,6 +9,7 @@ import { N2EmptyHero } from './N2EmptyHero';
 import { N2ErrorView } from './N2ErrorView';
 import { N2ColumnMapper } from './N2ColumnMapper';
 import { N2DryRun } from './N2DryRun';
+import { fmtCost, fmtInt } from '../../utils/format';
 
 interface PillProps {
   kind: FilterKind;
@@ -240,12 +241,18 @@ function N2ResultPanel() {
   const slice = useStore((s) => s.fullname);
   const sid = slice.sid;
   const rows = slice.rows;
+  const telemetry = slice.telemetry;
   // Counts: total processed (every non-pending row) and Y extracted /
   // Z NULL splits per the spec. "Extracted cleanly" = a row Grok produced
   // a non-null split for. NULL = Grok returned null for both parts.
   const processed = rows.filter((r) => r.status !== 'pending').length;
   const nullCount = rows.filter((r) => r.status === 'null').length;
   const extracted = processed - nullCount;
+  // Actual cost — post-run authoritative number from spend.record()
+  // which sums xAI's usage.* tokens × the per-1k rate. The dry-run
+  // estimate is a forecast; this is the real bill.
+  const costUsd = telemetry.costUsd ?? 0;
+  const totalTokens = (telemetry.tokensIn ?? 0) + (telemetry.tokensOut ?? 0);
   if (!sid) return null;
   return (
     <div
@@ -268,20 +275,38 @@ function N2ResultPanel() {
           flex: '1 1 320px',
         }}
       >
-        <span style={{ color: N2.text, fontWeight: 600 }}>
-          {processed.toLocaleString('en-US')}
-        </span>{' '}
-        rows processed
-        <span style={{ color: N2.hair3, margin: '0 8px' }}>·</span>
-        <span style={{ color: N2.sage, fontWeight: 600 }}>
-          {extracted.toLocaleString('en-US')}
-        </span>{' '}
-        extracted cleanly
-        <span style={{ color: N2.hair3, margin: '0 8px' }}>·</span>
-        <span style={{ color: N2.rose, fontWeight: 600 }}>
-          {nullCount.toLocaleString('en-US')}
-        </span>{' '}
-        NULL
+        <div>
+          <span style={{ color: N2.text, fontWeight: 600 }}>
+            {processed.toLocaleString('en-US')}
+          </span>{' '}
+          rows processed
+          <span style={{ color: N2.hair3, margin: '0 8px' }}>·</span>
+          <span style={{ color: N2.sage, fontWeight: 600 }}>
+            {extracted.toLocaleString('en-US')}
+          </span>{' '}
+          extracted cleanly
+          <span style={{ color: N2.hair3, margin: '0 8px' }}>·</span>
+          <span style={{ color: N2.rose, fontWeight: 600 }}>
+            {nullCount.toLocaleString('en-US')}
+          </span>{' '}
+          NULL
+        </div>
+        {costUsd > 0 && (
+          <div style={{ marginTop: 6 }}>
+            <span style={{ color: N2.text3 }}>Cost: </span>
+            <span style={{ color: N2.accent, fontWeight: 600 }}>
+              {fmtCost(costUsd)}
+            </span>
+            {totalTokens > 0 && (
+              <>
+                <span style={{ color: N2.hair3, margin: '0 8px' }}>·</span>
+                <span style={{ color: N2.text2 }}>
+                  {fmtInt(totalTokens)} tokens
+                </span>
+              </>
+            )}
+          </div>
+        )}
       </div>
       <div style={{ display: 'flex', gap: 10, flex: '0 0 auto' }}>
         <a
