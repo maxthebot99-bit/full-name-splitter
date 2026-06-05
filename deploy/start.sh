@@ -14,5 +14,5 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-PORT="${PORT:-8181}"
+PORT="${PORT:-8201}"
 exec ./.venv/bin/python -m full_name_splitter.main

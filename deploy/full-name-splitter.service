@@ -5,12 +5,12 @@
 # directives below are the canonical "post-2026-04-27 lockdown" pattern;
 # do not weaken them without updating memory/project_vps_lockdown_complete.md.
 #
-# Before first deploy you must plant both keys via systemd-creds:
-#   sudo systemd-creds encrypt --name=xai-api-key    - /etc/credstore.encrypted/xai-api-key
-#   sudo systemd-creds encrypt --name=resend-api-key - /etc/credstore.encrypted/resend-api-key
+# Reuses cleaners-hub's already-planted credentials:
+#   /etc/credstore.encrypted/xai-api-key      (Grok PAT — required)
+#   /etc/credstore.encrypted/resend-api-key   (optional, for completion emails)
 
 [Unit]
-Description=full-name-splitter web app (Companies + First Names cleaner)
+Description=full-name-splitter web app (Splits Full Name → First + Last via Grok)
 After=network-online.target
 Wants=network-online.target
 
@@ -19,22 +19,17 @@ Type=simple
 User=www-data
 Group=www-data
 WorkingDirectory=/var/www/dashboard/apps/full-name-splitter
-Environment=PORT=8181
+Environment=PORT=8201
 Environment=CLEANERS_HUB_ENV=prod
 Environment=CLEANERS_HUB_DATA_DIR=/var/lib/full-name-splitter
 Environment=CLEANERS_HUB_SESSIONS_DIR=/var/tmp/full-name-splitter/sessions
 # Credentials are decrypted into /run/credentials/full-name-splitter.service/<name>
-# at unit start; we expose them to the app via the same env names the Python
-# code already looks at (XAI_API_KEY_FILE, RESEND_API_KEY_FILE,
-# OPENROUTER_API_KEY_FILE).
-#
-# Plant openrouter-api-key via /home/kianna/install-openrouter-creds.sh.
+# at unit start; we expose them to the app via the env names the Python
+# code looks at (XAI_API_KEY_FILE, RESEND_API_KEY_FILE).
 LoadCredentialEncrypted=xai-api-key:/etc/credstore.encrypted/xai-api-key
 LoadCredentialEncrypted=resend-api-key:/etc/credstore.encrypted/resend-api-key
-LoadCredentialEncrypted=openrouter-api-key:/etc/credstore.encrypted/openrouter-api-key
 Environment=XAI_API_KEY_FILE=%d/xai-api-key
 Environment=RESEND_API_KEY_FILE=%d/resend-api-key
-Environment=OPENROUTER_API_KEY_FILE=%d/openrouter-api-key
 
 ExecStart=/var/www/dashboard/apps/full-name-splitter/deploy/start.sh
 Restart=on-failure

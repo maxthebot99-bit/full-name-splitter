@@ -26,7 +26,7 @@ set -euo pipefail
 # ─── tunables ────────────────────────────────────────────────────────────────
 
 APP_NAME="full-name-splitter"
-SUBDOMAIN="cleaners"
+SUBDOMAIN="full-name-splitter"
 DOMAIN="maxcommandcenter.com"
 HOSTNAME_FQDN="${SUBDOMAIN}.${DOMAIN}"
 PORT_RANGE_START=8180
