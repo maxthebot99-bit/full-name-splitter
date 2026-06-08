@@ -50,7 +50,9 @@ Return ONLY the bare first name and bare last name as structured output. Do not 
 
 - Otherwise: the FIRST whitespace-separated token is the first name, the LAST whitespace-separated token is the last name. DROP every middle token — whether it looks like an initial ("E.", "J", "M."), an abbreviation, or a real middle name ("Jane", "Robert", "José"). This is intentional: the output feeds email merge tags, and a bare first name is required. "Christopher E. Pintado" → first="Christopher", last="Pintado". "Mary Jane Smith" → first="Mary", last="Smith". "James Robert Smith" → first="James", last="Smith".
 
-- Lowercase particles ("van", "der", "de", "la", "di", "von", "le", "del") that appear immediately before the final token attach to the last name rather than being dropped as middle: "John van der Berg" → first="John", last="van der Berg".
+- Particles ("van", "der", "de", "del", "la", "le", "di", "da", "dal", "von") that appear immediately before the final token attach to the last name rather than being dropped as middle. MATCH CASE-INSENSITIVELY — "Van", "De", "Del", "Dal" all qualify. Preserve the original capitalization on output. "John van der Berg" → first="John", last="van der Berg". "Eduardo Del Rio" → first="Eduardo", last="Del Rio". "Richard Van Hook" → first="Richard", last="Van Hook". "Lauren Dal Farra" → first="Lauren", last="Dal Farra".
+
+- Trim a trailing period from the first-name output. Stylized initials-only first names ("J.R.", "T.J.", "A.J.") keep their internal periods but lose the terminal one — "J.R. Cady" → first="J.R", last="Cady". Same rule for any stray trailing period on a first name.
 
 
 
@@ -95,6 +97,12 @@ Output: {"first": "John", "last": "Smith"}
 
 Input:  = "John van der Berg"
 Output: {"first": "John", "last": "van der Berg"}
+
+Input:  = "Eduardo Del Rio"
+Output: {"first": "Eduardo", "last": "Del Rio"}
+
+Input:  = "J.R. Cady"
+Output: {"first": "J.R", "last": "Cady"}
 
 Input:  = "María José García"
 Output: {"first": "María", "last": "García"}
