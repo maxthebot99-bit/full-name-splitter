@@ -1,13 +1,14 @@
 full_name,expected_first,expected_last
 John Smith,John,Smith
-Dr. Mary Jane Watson PhD,Mary Jane,Watson
+Dr. Mary Jane Watson PhD,Mary,Watson
 "Smith, John",John,Smith
 John van der Berg,John,van der Berg
-María José García,María José,García
+María José García,María,García
 O'Brien Patrick,Patrick,O'Brien
 John 🚀 Smith,John,Smith
 "Sarah Johnson | Open to Work | Marketing Director at Acme",Sarah,Johnson
-James Robert Smith Jr.,James Robert,Smith
+James Robert Smith Jr.,James,Smith
+Christopher E. Pintado,Christopher,Pintado
 Mary-Jane Smith,Mary-Jane,Smith
 "Park Ji-min (she/her)",Park,Ji-min
 Madonna,,

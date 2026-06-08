@@ -14,7 +14,7 @@ Return ONLY the bare first name and bare last name as structured output. Do not 
 
 1) Strip the following from the input before deciding first vs. last:
 
-- Titles: Dr., Mr., Mrs., Ms., Mx., Prof., Sir, Dame, Rev., Hon.
+- Titles: Dr., Mr., Mrs., Ms., Mx., Prof., Sir, Dame, Rev., Hon., Justice, Judge.
 
 - Suffixes: Jr., Sr., II, III, IV, MD, PhD, Esq., CPA, MBA, JD, RN.
 
@@ -44,11 +44,13 @@ Return ONLY the bare first name and bare last name as structured output. Do not 
 
 3) Decide first vs. last:
 
-- Reversed-order signal is the comma. "Smith, John" → first="John", last="Smith".
+- Reversed-order signal is the comma. "Smith, John" → first="John", last="Smith". Everything before the comma is the last name (preserving multi-token last names like "Smith Jones"); the FIRST token after the comma is the first name.
 
-- Compound first name default: the LAST whitespace-separated token is the last name, everything before is the first name. "Mary Jane Smith" → first="Mary Jane", last="Smith".
+- Hyphenated tokens count as a single token. "Mary-Jane Smith" → first="Mary-Jane", last="Smith". "Jean-Luc Picard" → first="Jean-Luc", last="Picard".
 
-- Single-particle last names attach to the last token: "John van der Berg" → first="John", last="van der Berg".
+- Otherwise: the FIRST whitespace-separated token is the first name, the LAST whitespace-separated token is the last name. DROP every middle token — whether it looks like an initial ("E.", "J", "M."), an abbreviation, or a real middle name ("Jane", "Robert", "José"). This is intentional: the output feeds email merge tags, and a bare first name is required. "Christopher E. Pintado" → first="Christopher", last="Pintado". "Mary Jane Smith" → first="Mary", last="Smith". "James Robert Smith" → first="James", last="Smith".
+
+- Lowercase particles ("van", "der", "de", "la", "di", "von", "le", "del") that appear immediately before the final token attach to the last name rather than being dropped as middle: "John van der Berg" → first="John", last="van der Berg".
 
 
 
@@ -80,7 +82,13 @@ Input:  = "John Smith"
 Output: {"first": "John", "last": "Smith"}
 
 Input:  = "Dr. Mary Jane Watson PhD"
-Output: {"first": "Mary Jane", "last": "Watson"}
+Output: {"first": "Mary", "last": "Watson"}
+
+Input:  = "Christopher E. Pintado"
+Output: {"first": "Christopher", "last": "Pintado"}
+
+Input:  = "James Robert Smith Jr."
+Output: {"first": "James", "last": "Smith"}
 
 Input:  = "Smith, John"
 Output: {"first": "John", "last": "Smith"}
@@ -89,7 +97,7 @@ Input:  = "John van der Berg"
 Output: {"first": "John", "last": "van der Berg"}
 
 Input:  = "María José García"
-Output: {"first": "María José", "last": "García"}
+Output: {"first": "María", "last": "García"}
 
 Input:  = "O'Brien Patrick"
 Output: {"first": "Patrick", "last": "O'Brien"}

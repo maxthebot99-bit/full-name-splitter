@@ -98,7 +98,7 @@ def build_batch_tail(raw_names: list[str]) -> str:
         "    last must be null together — never return one populated and the other\n"
         "    null. (A single-token input like \"John\" returns {first:null, last:null}.)\n"
         "  - why: a concise reason, MAX 10 WORDS, naming the rule(s) applied — e.g.\n"
-        '    "stripped title and suffix", "comma-reversed", "compound first",\n'
+        '    "stripped title and suffix", "comma-reversed", "dropped middle",\n'
         '    "null: mononym", "null: unparseable", "null: single token",\n'
         '    "no change needed". Never leave this blank.\n\n'
         "The outputs array length MUST equal the input length and preserve order.\n"

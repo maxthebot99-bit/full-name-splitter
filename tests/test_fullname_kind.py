@@ -214,7 +214,7 @@ def test_golden_fixture_loadable():
     assert FIXTURE_PATH.exists(), f"missing fixture: {FIXTURE_PATH}"
     with FIXTURE_PATH.open("r", encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
-    assert len(rows) == 25, f"expected 25 fixture rows, got {len(rows)}"
+    assert len(rows) == 26, f"expected 26 fixture rows, got {len(rows)}"
     assert set(rows[0].keys()) == {"full_name", "expected_first", "expected_last"}
     # Spot-check a few known rows.
     by_input = {r["full_name"]: r for r in rows}
